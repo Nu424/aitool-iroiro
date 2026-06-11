@@ -5,7 +5,9 @@ description = "CLI tools for multimodal AI tasks through OpenRouter"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "google-genai>=2.6.0",
     "httpx>=0.28.1",
+    "pydantic>=2.13.4",
     "python-dotenv>=1.2.1",
     "typer>=0.25.1",
 ]

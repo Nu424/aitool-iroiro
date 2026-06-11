@@ -80,3 +80,86 @@ def test_recognize_image_prints_to_stdout(monkeypatch) -> None:
 
     assert result.exit_code == 0
     assert result.stdout == "image description\n"
+
+
+def test_recognize_video_prints_to_stdout(monkeypatch) -> None:
+    captured = {}
+
+    def fake_run(self, video, *, prompt, structured_output=False, fps=None):
+        captured["video"] = video
+        captured["prompt"] = prompt
+        captured["structured_output"] = structured_output
+        captured["fps"] = fps
+        return "video description"
+
+    monkeypatch.setattr("aitool.cli.VideoRecognitionTool.run", fake_run)
+
+    result = runner.invoke(
+        app,
+        [
+            "recognize-video",
+            "--api-key",
+            "test-key",
+            "--text",
+            "describe",
+            "--video",
+            "video.mp4",
+            "--model",
+            "example/video",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert result.stdout == "video description\n"
+    assert captured == {
+        "video": "video.mp4",
+        "prompt": "describe",
+        "structured_output": False,
+        "fps": None,
+    }
+
+
+def test_recognize_video_writes_structured_output_when_requested(tmp_path: Path, monkeypatch) -> None:
+    captured = {}
+
+    def fake_run(self, video, *, prompt, structured_output=False, fps=None):
+        captured["video"] = video
+        captured["prompt"] = prompt
+        captured["structured_output"] = structured_output
+        captured["fps"] = fps
+        return '{"global": {"summary": "ok", "topics": [], "entities": []}, "segments": []}'
+
+    monkeypatch.setattr("aitool.cli.VideoRecognitionTool.run", fake_run)
+    output = tmp_path / "video.json"
+
+    result = runner.invoke(
+        app,
+        [
+            "recognize-video",
+            "--api-key",
+            "test-key",
+            "--text",
+            "analyze",
+            "--video",
+            "https://www.youtube.com/watch?v=example",
+            "--structured-output",
+            "--fps",
+            "0.5",
+            "--output",
+            str(output),
+            "--model",
+            "example/video",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert result.stdout == ""
+    assert output.read_text(encoding="utf-8") == (
+        '{"global": {"summary": "ok", "topics": [], "entities": []}, "segments": []}'
+    )
+    assert captured == {
+        "video": "https://www.youtube.com/watch?v=example",
+        "prompt": "analyze",
+        "structured_output": True,
+        "fps": 0.5,
+    }

@@ -13,7 +13,7 @@ from typing import Annotated
 
 import typer
 
-from aitool.config import resolve_api_key, resolve_model
+from aitool.config import resolve_api_key, resolve_google_api_key, resolve_model
 from aitool.errors import AitoolError
 from aitool.io import ensure_output_parent
 from aitool.models import DEFAULT_TIMEOUT_SECONDS, ToolFeature
@@ -21,6 +21,7 @@ from aitool.tools.image_generation import ImageGenerationTool, save_generated_im
 from aitool.tools.image_recognition import ImageRecognitionTool
 from aitool.tools.stt import SpeechToTextTool
 from aitool.tools.tts import TextToSpeechTool
+from aitool.tools.video_recognition import VideoRecognitionTool
 
 # --- Typer アプリケーション ---
 
@@ -59,6 +60,16 @@ def _resolve_tool_settings(
         解決済みの ``(api_key, model)`` タプル。
     """
     return resolve_api_key(api_key), resolve_model(feature, model)
+
+
+def _resolve_google_tool_settings(
+    feature: ToolFeature,
+    *,
+    api_key: str | None,
+    model: str | None,
+) -> tuple[str, str]:
+    """Google GenAI を使うサブコマンド用に API キーとモデル名を解決する。"""
+    return resolve_google_api_key(api_key), resolve_model(feature, model)
 
 
 def _write_text_result(text: str, output: Path | None) -> None:
@@ -197,6 +208,60 @@ def recognize_image(
 
         if json_output:
             _echo_json({"output": str(output) if output else None, "model": resolved_model})
+    except AitoolError as error:
+        _fail(error)
+
+
+# --- サブコマンド: 動画理解 ---
+
+
+@app.command("recognize-video")
+def recognize_video(
+    text: Annotated[str, typer.Option("--text", "-t", help="Prompt text.")],
+    video: Annotated[str, typer.Option("--video", "-v", help="Input video file path or YouTube URL.")],
+    output: Annotated[Path | None, typer.Option("--output", "-o", help="Optional text output path.")] = None,
+    structured_output: Annotated[
+        bool,
+        typer.Option("--structured-output", help="Request JSON output using the built-in video schema."),
+    ] = False,
+    fps: Annotated[float | None, typer.Option("--fps", help="Custom video sampling frame rate.")] = None,
+    model: Annotated[str | None, typer.Option("--model", help="Override the video recognition model.")] = None,
+    api_key: Annotated[str | None, typer.Option("--api-key", help="Google GenAI API key.")] = None,
+    timeout: Annotated[float, typer.Option("--timeout", help="HTTP timeout in seconds.")] = DEFAULT_TIMEOUT_SECONDS,
+    json_output: Annotated[bool, typer.Option("--json", help="Print metadata as JSON.")] = False,
+    verbose: Annotated[bool, typer.Option("--verbose", help="Print extra status to stderr.")] = False,
+) -> None:
+    """動画とテキストから説明・回答テキストを得る。
+
+    ローカル動画は File API でアップロードし、YouTube URL は直接 Gemini API に渡す。
+    """
+    try:
+        resolved_api_key, resolved_model = _resolve_google_tool_settings(
+            "video_recognition",
+            api_key=api_key,
+            model=model,
+        )
+        if verbose:
+            typer.echo(f"Using model: {resolved_model}", err=True)
+
+        tool = VideoRecognitionTool(resolved_api_key, resolved_model, timeout, verbose)
+        result = tool.run(
+            video,
+            prompt=text,
+            structured_output=structured_output,
+            fps=fps,
+        )
+        _write_text_result(result, output)
+
+        if json_output:
+            _echo_json(
+                {
+                    "output": str(output) if output else None,
+                    "model": resolved_model,
+                    "structured_output": structured_output,
+                    "fps": fps,
+                }
+            )
     except AitoolError as error:
         _fail(error)
 

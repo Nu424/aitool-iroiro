@@ -32,3 +32,7 @@ class OpenRouterHTTPError(AitoolError):
 
 class OpenRouterResponseError(AitoolError):
     """HTTP は成功したが、レスポンスの構造が想定と異なる場合に送出する。"""
+
+
+class GoogleGenAIResponseError(AitoolError):
+    """Google GenAI のレスポンスやファイル処理状態が想定と異なる場合に送出する。"""
