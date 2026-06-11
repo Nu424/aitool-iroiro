@@ -1,0 +1,41 @@
+{
+    "global": {
+        "summary": "動画全体の要約（数文）",
+        "topics": [
+            "プロダクト発表",
+            "Q3業績"
+        ],
+        "entities": [
+            {
+                "id": "person_1",
+                "type": "person"
+            }
+        ]
+    },
+    "segments": [
+        {
+            "start_sec": 120.5,
+            "end_sec": 185.2,
+            "title": "売上推移の説明",
+            "summary": "このシーンで何が起きてるかを詳細かつ過不足無く要約する",
+            "visual": "このシーンの視覚的な情報を記述する。場所・場面・オブジェクト・アクションなどを含める。",
+            "audio": "このシーンの音声の特徴・情報を記述する。",
+            "speech": {
+                "speakers": [
+                    "person_1"
+                ],
+                "utterances": [
+                    {
+                        "start_sec": 121.0,
+                        "end_sec": 124.5,
+                        "speaker": "person_1",
+                        "text": "文字起こし"
+                    }
+                ]
+            },
+            "entities_present": [
+                "person_1"
+            ]
+        }
+    ]
+}
