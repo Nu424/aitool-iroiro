@@ -163,3 +163,75 @@ def test_recognize_video_writes_structured_output_when_requested(tmp_path: Path,
         "structured_output": True,
         "fps": 0.5,
     }
+
+
+def test_transcribe_timestamp_prints_json_to_stdout(monkeypatch) -> None:
+    def fake_run(
+        self,
+        audio_path,
+        *,
+        audio_format_override=None,
+        granularity="segment",
+        language=None,
+        prompt=None,
+    ):
+        return {
+            "text": "hello",
+            "segments": [{"start": 0.0, "end": 1.0, "text": " hello"}],
+        }
+
+    monkeypatch.setattr("aitool.cli.TimestampTranscriptionTool.run", fake_run)
+
+    result = runner.invoke(
+        app,
+        [
+            "transcribe-timestamp",
+            "--api-key",
+            "test-key",
+            "--audio",
+            "voice.mp3",
+            "--model",
+            "whisper-1",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert '"text": "hello"' in result.stdout
+    assert '"segments"' in result.stdout
+
+
+def test_transcribe_timestamp_writes_output_when_requested(tmp_path: Path, monkeypatch) -> None:
+    def fake_run(
+        self,
+        audio_path,
+        *,
+        audio_format_override=None,
+        granularity="segment",
+        language=None,
+        prompt=None,
+    ):
+        return {"text": "saved", "words": [{"word": "saved", "start": 0.0, "end": 0.5}]}
+
+    monkeypatch.setattr("aitool.cli.TimestampTranscriptionTool.run", fake_run)
+    output = tmp_path / "transcript.json"
+
+    result = runner.invoke(
+        app,
+        [
+            "transcribe-timestamp",
+            "--api-key",
+            "test-key",
+            "--audio",
+            "voice.mp3",
+            "--granularity",
+            "word",
+            "--output",
+            str(output),
+            "--model",
+            "whisper-1",
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert result.stdout == ""
+    assert '"text": "saved"' in output.read_text(encoding="utf-8")

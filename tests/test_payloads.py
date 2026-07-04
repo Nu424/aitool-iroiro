@@ -2,7 +2,7 @@ from pathlib import Path
 
 from aitool.tools.image_generation import build_image_generation_payload
 from aitool.tools.image_recognition import build_image_recognition_payload
-from aitool.tools.stt import build_transcription_payload
+from aitool.tools.stt import build_timestamp_transcription_form, build_transcription_payload
 from aitool.tools.tts import build_speech_payload
 from aitool.tools.video_recognition import (
     VideoAnalysis,
@@ -56,6 +56,58 @@ def test_build_transcription_payload(tmp_path: Path) -> None:
             "format": "mp3",
         },
     }
+
+
+def test_build_timestamp_transcription_form_segment(tmp_path: Path) -> None:
+    audio = tmp_path / "voice.mp3"
+    audio.write_bytes(b"audio")
+
+    data, files = build_timestamp_transcription_form(audio, "whisper-1")
+
+    assert data == {
+        "model": "whisper-1",
+        "response_format": "verbose_json",
+        "timestamp_granularities[0]": "segment",
+    }
+    assert files["file"][0] == "audio.mp3"
+    assert files["file"][1] == b"audio"
+    assert files["file"][2] is None
+
+
+def test_build_timestamp_transcription_form_word(tmp_path: Path) -> None:
+    audio = tmp_path / "voice.wav"
+    audio.write_bytes(b"audio")
+
+    data, files = build_timestamp_transcription_form(
+        audio,
+        "whisper-1",
+        granularity="word",
+        language="ja",
+        prompt="test prompt",
+    )
+
+    assert data == {
+        "model": "whisper-1",
+        "response_format": "verbose_json",
+        "timestamp_granularities[0]": "segment",
+        "timestamp_granularities[1]": "word",
+        "language": "ja",
+        "prompt": "test prompt",
+    }
+    assert files["file"][0] == "audio.wav"
+
+
+def test_build_timestamp_transcription_form_uses_format_override(tmp_path: Path) -> None:
+    audio = tmp_path / "voice.bin"
+    audio.write_bytes(b"audio")
+
+    _, files = build_timestamp_transcription_form(
+        audio,
+        "whisper-1",
+        audio_format_override="mp3",
+    )
+
+    assert files["file"][0] == "audio.mp3"
 
 
 def test_build_speech_payload() -> None:
