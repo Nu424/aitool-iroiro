@@ -1,14 +1,14 @@
 ---
 name: aitool-iroiro
 description: |
-  OpenRouter API / Google GenAI API経由でマルチモーダルAIタスクをCLIから実行するツール群 (aitool-iroiro) の使い方スキル。
+  OpenRouter API / Google GenAI API / OpenAI API経由でマルチモーダルAIタスクをCLIから実行するツール群 (aitool-iroiro) の使い方スキル。
   画像生成・画像認識・動画理解・音声文字起こし・音声合成が必要なとき、または `aitool` コマンドを使うタスクが来たときは必ずこのスキルを参照すること。
   具体的には「画像を編集して」「この動画を要約して」「この音声をテキストにして」「テキストを読み上げて」「画像を説明して」などのリクエストが対象。
 ---
 
 # aitool-iroiro スキル
 
-OpenRouter APIとGoogle GenAI APIを使ったマルチモーダルAI CLIツール群。`aitool` コマンド1本で画像生成・画像認識・動画理解・文字起こし・音声合成を実行できる。
+OpenRouter APIとGoogle GenAI API、OpenAI APIを使ったマルチモーダルAI CLIツール群。`aitool` コマンド1本で画像生成・画像認識・動画理解・文字起こし・タイムスタンプ付き文字起こし・音声合成を実行できる。
 
 ## コマンドリファレンス
 
@@ -17,7 +17,7 @@ OpenRouter APIとGoogle GenAI APIを使ったマルチモーダルAI CLIツー�
 | オプション | 説明 | デフォルト |
 |-----------|------|-----------|
 | `--model TEXT` | 使用モデルを上書き | 環境変数またはプログラム内定数 |
-| `--api-key TEXT` | APIキーを指定（動画理解はGoogle GenAI、それ以外はOpenRouter） | `.env` / 環境変数 |
+| `--api-key TEXT` | APIキーを指定（動画理解はGoogle GenAI、タイムスタンプ付き文字起こしはOpenAI、それ以外はOpenRouter） | `.env` / 環境変数 |
 | `--timeout FLOAT` | HTTPタイムアウト（秒） | `120.0` |
 | `--json` | メタ情報をJSON形式で標準出力に表示 | `False` |
 | `--verbose` | 追加ステータスをstderrに表示 | `False` |
@@ -133,6 +133,36 @@ aitool transcribe \
 
 ---
 
+### `transcribe-timestamp` — タイムスタンプ付き文字起こし
+
+OpenAI 公式 API を直接呼び出し、segment（または word）単位のタイムスタンプ付き文字起こしを行う。結果は `verbose_json` 形式の JSON。
+
+```bash
+# セグメント単位（デフォルト）
+aitool transcribe-timestamp --audio ./voice.mp3 [--output ./transcript.json]
+
+# 単語単位のタイムスタンプも含める
+aitool transcribe-timestamp \
+  --audio ./voice.mp3 \
+  --granularity segment \
+  --language ja \
+  --output ./transcript.json
+```
+
+| オプション | 短縮 | 必須 | 説明 |
+|-----------|------|------|------|
+| `--audio PATH` | `-a` | ✅ | 入力音声ファイルパス |
+| `--output PATH` | `-o` | — | JSON結果の保存先（省略→標準出力） |
+| `--format TEXT` | — | — | 音声フォーマット（省略→拡張子から推定） |
+| `--granularity TEXT` | — | — | `segment`（デフォルト）、`word`、`both` |
+| `--language TEXT` | — | — | 入力言語の ISO-639-1 コード |
+| `--prompt TEXT` | — | — | スタイル誘導用プロンプト |
+| + 共通オプション（`--json` 除く） | | | |
+
+注意: `OPENAI_API_KEY` が必要。既定モデルは `whisper-1`（25MB まで）。`gpt-4o-transcribe` 系は `verbose_json` 非対応のため使用不可。
+
+---
+
 ### `tts` — 音声合成
 
 テキストから音声ファイルを生成する。
@@ -213,6 +243,22 @@ GEMINI_API_KEY=xxxxxxxxxxxxxxxx
 aitool recognize-video --api-key xxxxx --text "要約して" --video ./video.mp4
 ```
 
+### `Error: OPENAI_API_KEY not found` — OpenAI APIキー未設定の場合
+
+タイムスタンプ付き文字起こしを使う場合は、以下のいずれかで OpenAI API キーを設定する:
+
+```dotenv
+OPENAI_API_KEY=sk-xxxxxxxxxxxxxxxx
+```
+
+またはCLI引数で直接渡す:
+
+```bash
+aitool transcribe-timestamp --api-key sk-xxx --audio ./voice.mp3
+```
+
+APIキーは https://platform.openai.com/api-keys で取得できる。
+
 ---
 
 ## 参考: API キー・モデルの設定
@@ -231,11 +277,13 @@ APIキーとモデルは以下の優先順で解決される（上ほど優先�
 ```dotenv
 OPENROUTER_API_KEY=sk-or-...
 GEMINI_API_KEY=...
+OPENAI_API_KEY=sk-...
 
 # モデルを変えたい場合（省略時はプログラム内定数が使われる）
 AITOOL_IMAGE_GENERATION_MODEL=google/gemini-3.1-flash-image-preview
 AITOOL_IMAGE_RECOGNITION_MODEL=google/gemini-3-flash-preview
 AITOOL_STT_MODEL=openai/whisper-large-v3-turbo
+AITOOL_STT_TIMESTAMP_MODEL=whisper-1
 AITOOL_TTS_MODEL=google/gemini-3.1-flash-tts-preview
 AITOOL_VIDEO_RECOGNITION_MODEL=gemini-3.5-flash
 ```

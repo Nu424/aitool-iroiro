@@ -32,6 +32,7 @@ APIキーは次の順で解決します。
 ```dotenv
 OPENROUTER_API_KEY=sk-or-...
 GEMINI_API_KEY=...
+OPENAI_API_KEY=sk-...
 ```
 
 既定モデルも同じ考え方で、CLIの `--model` が最優先です。未指定時は `.env`、`~/.env.global`、環境変数、最後にプログラム内定数の順で解決します。
@@ -40,6 +41,7 @@ GEMINI_API_KEY=...
 AITOOL_IMAGE_GENERATION_MODEL=google/gemini-3.1-flash-image-preview
 AITOOL_IMAGE_RECOGNITION_MODEL=google/gemini-3-flash-preview
 AITOOL_STT_MODEL=openai/whisper-large-v3-turbo
+AITOOL_STT_TIMESTAMP_MODEL=whisper-1
 AITOOL_TTS_MODEL=google/gemini-3.1-flash-tts-preview
 AITOOL_VIDEO_RECOGNITION_MODEL=gemini-3.5-flash
 ```
@@ -112,6 +114,24 @@ aitool transcribe \
   --prompt "話者ごとに分けて文字起こししてください" \
   --audio ./meeting.mp3
 ```
+
+### Transcribe With Timestamps
+
+```bash
+aitool transcribe-timestamp --audio ./voice.mp3
+```
+
+OpenAI 公式 API を直接呼び出し、segment 単位のタイムスタンプ付き文字起こしを `verbose_json` 形式で出力します。`OPENAI_API_KEY` が必要です。結果は標準出力へ出ます。保存したい場合は `--output transcript.json` を指定します。
+
+```bash
+aitool transcribe-timestamp \
+  --audio ./voice.mp3 \
+  --granularity segment \
+  --language ja \
+  --output ./transcript.json
+```
+
+`--granularity` は `segment`（既定）、`word`、`both` を指定できます。`whisper-1` モデルは 25MB までの音声ファイルに対応します。
 
 ### Text To Speech
 
