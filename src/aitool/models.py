@@ -9,7 +9,14 @@ from typing import Final, Literal
 
 # --- 型エイリアス ---
 
-ToolFeature = Literal["image_generation", "image_recognition", "stt", "tts", "video_recognition"]
+ToolFeature = Literal[
+    "image_generation",
+    "image_recognition",
+    "stt",
+    "stt_timestamp",
+    "tts",
+    "video_recognition",
+]
 """ツール機能を識別するリテラル型。"""
 
 # --- 既定モデル（コード内定数） ---
@@ -18,6 +25,7 @@ DEFAULT_MODELS: Final[dict[ToolFeature, str]] = {
     "image_generation": "google/gemini-3.1-flash-image-preview",
     "image_recognition": "google/gemini-3-flash-preview",
     "stt": "openai/whisper-large-v3-turbo",
+    "stt_timestamp": "whisper-1",
     "tts": "google/gemini-3.1-flash-tts-preview",
     "video_recognition": "gemini-3.5-flash",
 }
@@ -29,6 +37,7 @@ MODEL_ENV_VARS: Final[dict[ToolFeature, str]] = {
     "image_generation": "AITOOL_IMAGE_GENERATION_MODEL",
     "image_recognition": "AITOOL_IMAGE_RECOGNITION_MODEL",
     "stt": "AITOOL_STT_MODEL",
+    "stt_timestamp": "AITOOL_STT_TIMESTAMP_MODEL",
     "tts": "AITOOL_TTS_MODEL",
     "video_recognition": "AITOOL_VIDEO_RECOGNITION_MODEL",
 }
@@ -41,3 +50,6 @@ DEFAULT_TIMEOUT_SECONDS: Final[float] = 120.0
 
 OPENROUTER_BASE_URL: Final[str] = "https://openrouter.ai/api/v1"
 """OpenRouter API のベース URL。"""
+
+OPENAI_BASE_URL: Final[str] = "https://api.openai.com/v1"
+"""OpenAI API のベース URL。"""

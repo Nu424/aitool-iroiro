@@ -36,3 +36,22 @@ class OpenRouterResponseError(AitoolError):
 
 class GoogleGenAIResponseError(AitoolError):
     """Google GenAI のレスポンスやファイル処理状態が想定と異なる場合に送出する。"""
+
+
+class OpenAIHTTPError(AitoolError):
+    """OpenAI が非成功の HTTP ステータスを返した場合に送出する。"""
+
+    def __init__(self, status_code: int, body: str) -> None:
+        """HTTP エラー情報を保持して初期化する。
+
+        Args:
+            status_code: HTTP ステータスコード。
+            body: レスポンス本文（エラー詳細）。
+        """
+        self.status_code = status_code
+        self.body = body
+        super().__init__(f"OpenAI request failed with status {status_code}: {body}")
+
+
+class OpenAIResponseError(AitoolError):
+    """HTTP は成功したが、OpenAI レスポンスの構造が想定と異なる場合に送出する。"""
