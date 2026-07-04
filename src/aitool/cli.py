@@ -13,13 +13,13 @@ from typing import Annotated
 
 import typer
 
-from aitool.config import resolve_api_key, resolve_google_api_key, resolve_model
+from aitool.config import resolve_api_key, resolve_google_api_key, resolve_model, resolve_openai_api_key
 from aitool.errors import AitoolError
 from aitool.io import ensure_output_parent
 from aitool.models import DEFAULT_TIMEOUT_SECONDS, ToolFeature
 from aitool.tools.image_generation import ImageGenerationTool, save_generated_image
 from aitool.tools.image_recognition import ImageRecognitionTool
-from aitool.tools.stt import SpeechToTextTool
+from aitool.tools.stt import SpeechToTextTool, TimestampTranscriptionTool
 from aitool.tools.tts import TextToSpeechTool
 from aitool.tools.video_recognition import VideoRecognitionTool
 
@@ -38,6 +38,17 @@ class STTMode(str, Enum):
     """STT 専用エンドポイント（``/audio/transcriptions``）を使用。"""
     llm = "llm"
     """マルチモーダル LLM 経由（``/chat/completions``）で文字起こし。"""
+
+
+class STTGranularity(str, Enum):
+    """タイムスタンプ付き文字起こしの粒度。"""
+
+    segment = "segment"
+    """セグメント単位のタイムスタンプ。"""
+    word = "word"
+    """単語単位のタイムスタンプ（セグメントも含む）。"""
+    both = "both"
+    """セグメントと単語の両方のタイムスタンプ。"""
 
 
 # --- CLI 共通ヘルパー ---
@@ -70,6 +81,16 @@ def _resolve_google_tool_settings(
 ) -> tuple[str, str]:
     """Google GenAI を使うサブコマンド用に API キーとモデル名を解決する。"""
     return resolve_google_api_key(api_key), resolve_model(feature, model)
+
+
+def _resolve_openai_tool_settings(
+    feature: ToolFeature,
+    *,
+    api_key: str | None,
+    model: str | None,
+) -> tuple[str, str]:
+    """OpenAI を使うサブコマンド用に API キーとモデル名を解決する。"""
+    return resolve_openai_api_key(api_key), resolve_model(feature, model)
 
 
 def _write_text_result(text: str, output: Path | None) -> None:
@@ -303,6 +324,60 @@ def transcribe(
 
         if json_output:
             _echo_json({"output": str(output) if output else None, "model": resolved_model, "mode": mode.value})
+    except AitoolError as error:
+        _fail(error)
+
+
+# --- サブコマンド: タイムスタンプ付き文字起こし ---
+
+
+@app.command("transcribe-timestamp")
+def transcribe_timestamp(
+    audio: Annotated[Path, typer.Option("--audio", "-a", help="Input audio file path.")],
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", "-o", help="Optional transcript JSON output path."),
+    ] = None,
+    audio_format: Annotated[str | None, typer.Option("--format", help="Audio format. Defaults to extension.")] = None,
+    granularity: Annotated[
+        STTGranularity,
+        typer.Option("--granularity", help="Timestamp granularity."),
+    ] = STTGranularity.segment,
+    language: Annotated[
+        str | None,
+        typer.Option("--language", help="Input language ISO-639-1 code."),
+    ] = None,
+    prompt: Annotated[
+        str | None,
+        typer.Option("--prompt", help="Optional style-guiding prompt."),
+    ] = None,
+    model: Annotated[str | None, typer.Option("--model", help="Override the STT model.")] = None,
+    api_key: Annotated[str | None, typer.Option("--api-key", help="OpenAI API key.")] = None,
+    timeout: Annotated[float, typer.Option("--timeout", help="HTTP timeout in seconds.")] = DEFAULT_TIMEOUT_SECONDS,
+    verbose: Annotated[bool, typer.Option("--verbose", help="Print extra status to stderr.")] = False,
+) -> None:
+    """OpenAI 公式 API でタイムスタンプ付き文字起こしを行う。
+
+    結果は ``verbose_json`` 形式の JSON を標準出力または ``--output`` へ出力する。
+    """
+    try:
+        resolved_api_key, resolved_model = _resolve_openai_tool_settings(
+            "stt_timestamp",
+            api_key=api_key,
+            model=model,
+        )
+        if verbose:
+            typer.echo(f"Using model: {resolved_model}", err=True)
+
+        tool = TimestampTranscriptionTool(resolved_api_key, resolved_model, timeout, verbose)
+        result = tool.run(
+            audio,
+            audio_format_override=audio_format,
+            granularity=granularity.value,
+            language=language,
+            prompt=prompt,
+        )
+        _write_text_result(json.dumps(result, ensure_ascii=False, indent=2), output)
     except AitoolError as error:
         _fail(error)
 
