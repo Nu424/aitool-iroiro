@@ -8,6 +8,12 @@ OpenRouter APIなどを使って、マルチモーダルAIの作業をCLIから�
 uv tool install git+https://github.com/Nu424/aitool-iroiro.git
 ```
 
+アップデードする場合:
+
+```bash
+uv tool install --force git+https://github.com/Nu424/aitool-iroiro.git
+```
+
 一時実行する場合:
 
 ```bash
