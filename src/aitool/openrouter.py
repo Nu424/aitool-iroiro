@@ -121,6 +121,17 @@ class OpenRouterClient:
         """
         return self.post_json("/chat/completions", payload)
 
+    def images(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        """画像生成 API を呼び出す。
+
+        Args:
+            payload: 画像生成リクエストの JSON ペイロード。
+
+        Returns:
+            API レスポンスの JSON 辞書。
+        """
+        return self.post_json("/images", payload)
+
     def audio_transcriptions(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         """音声文字起こし API を呼び出す。
 

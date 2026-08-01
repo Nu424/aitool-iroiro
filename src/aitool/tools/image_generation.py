@@ -1,13 +1,14 @@
-"""OpenRouter チャット補完 API による画像生成（t2i / i2i）。"""
+"""OpenRouter Images API による画像生成（t2i / i2i）。"""
 
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from aitool.errors import OpenRouterResponseError
-from aitool.io import decode_data_url, ensure_output_parent, extension_for_mime, image_data_url
+from aitool.io import ensure_output_parent, extension_for_mime, image_data_url
 from aitool.tools.base import BaseTool
 
 
@@ -18,7 +19,7 @@ class GeneratedImage:
     Attributes:
         data: 生成された画像のバイナリデータ。
         mime: 画像の MIME タイプ。
-        message: モデルが返した付随テキスト（あれば）。
+        message: モデルが返した付随テキスト（あれば）。Images API では通常 None。
     """
 
     data: bytes
@@ -46,51 +47,72 @@ def build_image_generation_payload(
     aspect_ratio: str | None = None,
     image_size: str | None = None,
 ) -> dict[str, Any]:
-    """画像生成用のチャット補完リクエストペイロードを組み立てる。
+    """画像生成用の Images API リクエストペイロードを組み立てる。
 
-    入力画像が無い場合は t2i（テキストのみ）、ある場合は i2i（画像＋テキスト）として
-    ``content`` の形式を切り替える。
+    入力画像が無い場合は t2i（テキストのみ）、ある場合は i2i（``input_references``）として
+    ペイロードを組み立てる。CLI の ``--image-size`` は API の ``resolution`` にマッピングする。
 
     Args:
         text: 生成・編集の指示テキスト。
         image_paths: 入力画像のパス一覧。空なら t2i。
         model: 使用するモデル名。
         aspect_ratio: 画像のアスペクト比（例: ``1:1``）。
-        image_size: 画像サイズ（例: ``1K``, ``2K``）。
+        image_size: 画像サイズ（例: ``1K``, ``2K``）。API では ``resolution`` として送る。
 
     Returns:
-        ``/chat/completions`` に POST する JSON ペイロード。
+        ``/images`` に POST する JSON ペイロード。
     """
-    content: str | list[dict[str, Any]]
+    payload: dict[str, Any] = {
+        "model": model,
+        "prompt": text,
+    }
+
+    if aspect_ratio:
+        payload["aspect_ratio"] = aspect_ratio
+    if image_size:
+        payload["resolution"] = image_size
     if image_paths:
-        # i2i: テキストと画像 URL の配列
-        content = [{"type": "text", "text": text}]
-        content.extend(
+        payload["input_references"] = [
             {
                 "type": "image_url",
                 "image_url": {"url": image_data_url(path)},
             }
             for path in image_paths
-        )
-    else:
-        # t2i: テキストのみ
-        content = text
-
-    payload: dict[str, Any] = {
-        "model": model,
-        "messages": [{"role": "user", "content": content}],
-        "modalities": ["image", "text"],
-    }
-
-    image_config: dict[str, str] = {}
-    if aspect_ratio:
-        image_config["aspect_ratio"] = aspect_ratio
-    if image_size:
-        image_config["image_size"] = image_size
-    if image_config:
-        payload["image_config"] = image_config
+        ]
 
     return payload
+
+
+def parse_image_generation_response(response: dict[str, Any]) -> GeneratedImage:
+    """Images API レスポンスから生成画像を取り出す。
+
+    Args:
+        response: ``/images`` の JSON レスポンス。
+
+    Returns:
+        生成された画像データとメタ情報。
+
+    Raises:
+        OpenRouterResponseError: レスポンスに画像が含まれない、または Base64 が不正な場合。
+    """
+    try:
+        item = response["data"][0]
+        b64_json = item["b64_json"]
+        media_type = item.get("media_type") or "image/png"
+    except (KeyError, IndexError, TypeError) as exc:
+        raise OpenRouterResponseError("Image generation response did not include an image.") from exc
+
+    if not isinstance(b64_json, str):
+        raise OpenRouterResponseError("Generated image data was not text.")
+    if not isinstance(media_type, str):
+        raise OpenRouterResponseError("Generated image media type was not text.")
+
+    try:
+        data = base64.b64decode(b64_json)
+    except Exception as exc:
+        raise OpenRouterResponseError("Generated image data was not valid base64.") from exc
+
+    return GeneratedImage(data=data, mime=media_type, message=None)
 
 
 # --- ツール本体 ---
@@ -114,7 +136,7 @@ class ImageGenerationTool(BaseTool):
             text: 生成・編集の指示テキスト。
             image_paths: 入力画像のパス一覧。
             aspect_ratio: 画像のアスペクト比。
-            image_size: 画像サイズ。
+            image_size: 画像サイズ（API の ``resolution`` に対応）。
 
         Returns:
             生成された画像データとメタ情報。
@@ -122,7 +144,6 @@ class ImageGenerationTool(BaseTool):
         Raises:
             OpenRouterResponseError: レスポンスに画像が含まれない場合。
         """
-        # ---ペイロードを作成し、OpenRouter API を呼び出す
         payload = build_image_generation_payload(
             text,
             image_paths,
@@ -131,26 +152,9 @@ class ImageGenerationTool(BaseTool):
             image_size=image_size,
         )
         with self.create_client() as client:
-            response = client.chat_completions(payload)
+            response = client.images(payload)
 
-        # レスポンスから Base64 画像 URL を取り出す
-        try:
-            message = response["choices"][0]["message"]
-            image_url = message["images"][0]["image_url"]["url"]
-        except (KeyError, IndexError, TypeError) as exc:
-            raise OpenRouterResponseError("Image generation response did not include an image.") from exc
-
-        if not isinstance(image_url, str):
-            raise OpenRouterResponseError("Generated image URL was not text.")
-
-        # ---出力された画像URLをデコードして、データとMIMEを取得する
-        data, mime = decode_data_url(image_url)
-        content = message.get("content")
-        return GeneratedImage(
-            data=data,
-            mime=mime,
-            message=content if isinstance(content, str) else None,
-        )
+        return parse_image_generation_response(response)
 
 
 def save_generated_image(image: GeneratedImage, output_path: Path) -> Path:
