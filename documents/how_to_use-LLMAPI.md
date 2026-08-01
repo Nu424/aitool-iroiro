@@ -746,12 +746,12 @@ const response = await fetch('https://openrouter.ai/api/v1/audio/transcriptions'
 ```
 
 ## 画像の生成
-- 画像生成に対応しているモデルを使用すると、画像を生成できます。
-- `modalities`オプションを指定する必要があります。
-  - 画像の生成のみに対応しているモデルの場合、`modalities: ['image']` と指定します。
-  - 画像の生成とテキストの生成に対応しているモデルの場合、`modalities: ['image', 'text']` と指定します。
-- 生成する画像の設定は、`image_config`オプションで指定します。
-  - `aspect_ratio`: アスペクト比
+- 画像生成は専用の **Images API**（`POST /api/v1/images`）を使用します。
+  - 参考: https://openrouter.ai/docs/guides/overview/multimodal/image-generation
+- 主なリクエストパラメータ:
+  - `model`: 画像出力対応モデルのスラッグ
+  - `prompt`: 生成・編集の指示テキスト
+  - `aspect_ratio`: アスペクト比（任意）
     - `1:1`
     - `2:3`
     - `3:2`
@@ -766,16 +766,17 @@ const response = await fetch('https://openrouter.ai/api/v1/audio/transcriptions'
     - `4:1` (`google/gemini-3.1-flash-image-preview`のみ)
     - `1:8` (`google/gemini-3.1-flash-image-preview`のみ)
     - `8:1` (`google/gemini-3.1-flash-image-preview`のみ)
-  - `image_size`: 画像サイズ
+  - `resolution`: 解像度ティア（任意）
     - `1K`
     - `2K`
     - `4K`
     - `0.5K` (`google/gemini-3.1-flash-image-preview`のみ)
+  - `input_references`: 参照画像（i2i 時）。`{ type: "image_url", image_url: { url } }` の配列
 
 - リクエスト例:
 
 ```typescript
-const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+const response = await fetch('https://openrouter.ai/api/v1/images', {
   method: 'POST',
   headers: {
     Authorization: `Bearer <OPENROUTER_API_KEY>`,
@@ -783,14 +784,9 @@ const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
   },
   body: JSON.stringify({
     model: 'google/gemini-3.1-flash-image-preview',
-    messages: [
-      { "role": "user", "content": "かわいい猫のイラストを生成してください" }
-    ],
-    modalities: ['image', 'text'],
-    image_config: {
-      aspect_ratio: '1:1',
-      image_size: '1K'
-    }
+    prompt: 'かわいい猫のイラストを生成してください',
+    aspect_ratio: '1:1',
+    resolution: '1K',
   }),
 });
 ```
@@ -798,22 +794,18 @@ const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
 - レスポンスの形式(抜粋):
 ```json
 {
-  "choices": [
+  "created": 1748372400,
+  "data": [
     {
-      "message": {
-        "role": "assistant",
-        "content": "かわいい猫のイラストを生成しました。",
-        "images": [
-          {
-            "type": "image_url",
-            "image_url": {
-              "url": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAA..."
-            }
-          }
-        ]
-      }
+      "b64_json": "iVBORw0KGgoAAAANSUhEUgAA...",
+      "media_type": "image/png"
     }
-  ]
+  ],
+  "usage": {
+    "prompt_tokens": 0,
+    "completion_tokens": 4175,
+    "total_tokens": 4175,
+    "cost": 0.04
+  }
 }
-
 ```

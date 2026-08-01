@@ -131,7 +131,7 @@ flowchart TD
 ## API実装メモ
 
 - 画像認識は `/chat/completions` へ、`content: [{type: "text"}, {type: "image_url"}]` の配列を送ります。
-- 画像生成は `/chat/completions` へ、`modalities: ["image", "text"]` と `image_config` を付け、レスポンスの `choices[0].message.images[0].image_url.url` を保存します。
+- 画像生成は `/images` へ、`prompt` と任意の `aspect_ratio` / `resolution` / `input_references` を送り、レスポンスの `data[0].b64_json` を保存します。
 - STTの既定実装は `/audio/transcriptions` へ、`input_audio: { data: base64, format }` を送ります。
 - STTの `--mode llm` は `/chat/completions` へ、`content: [{type: "text"}, {type: "input_audio"}]` を送る拡張として実装します。
 - TTSは `/audio/speech` へJSONを送り、レスポンス本文をバイト列として保存します。エラー時はJSON本文を読んでCLIエラーに変換します。
