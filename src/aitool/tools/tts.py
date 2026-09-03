@@ -72,18 +72,21 @@ class TextToSpeechTool(BaseTool):
         voice: str,
         response_format: str,
         speed: float | None = None,
+        fetch_generation_stats: bool = False,
     ) -> ToolResult[SpeechGenerationResult]:
         """音声合成を実行し、バイナリデータとメタ情報を返す。
 
         音声合成のレスポンスはバイナリで ``usage`` を持たないため、
-        ``X-Generation-Id`` を手掛かりに ``/generation`` を照会して
-        トークン数・コスト・所要時間を補う。
+        コストを得るには ``X-Generation-Id`` から ``/generation`` を照会する
+        しかない。ただし記録が引けるまで 10 秒近くかかるため、
+        ``fetch_generation_stats`` が True のときだけ照会する。
 
         Args:
             text: 読み上げるテキスト。
             voice: 音声の種類。
             response_format: 出力形式（``mp3`` または ``pcm``）。
             speed: 再生速度。
+            fetch_generation_stats: ``/generation`` を照会してコストを補うかどうか。
 
         Returns:
             生成された音声データと、その呼び出しの計測値。
@@ -102,7 +105,11 @@ class TextToSpeechTool(BaseTool):
             # ---接続を閉じる前に /generation を照会して計測値を補う
             stats = self.complete_stats(
                 client,
-                CallStats(generation_id=_get_header(headers, "X-Generation-Id")),
+                CallStats(
+                    generation_id=_get_header(headers, "X-Generation-Id"),
+                    provider=_get_header(headers, "X-Provider-Name"),
+                ),
+                enabled=fetch_generation_stats,
             )
 
         # ---レスポンスから音声データとメタ情報を取り出し、構造的に返却する

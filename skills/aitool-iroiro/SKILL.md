@@ -29,6 +29,7 @@ OpenRouterの各モデルをCLIから呼び出すツール群。`aitool` コマ�
 | `--timeout FLOAT` | HTTPタイムアウト（秒） | `120.0` |
 | `--json` | 結果とメタ情報をJSONエンベロープ1個として標準出力に出す（人間向け表示は抑制） | `False` |
 | `--verbose` | 使用モデルと、所要時間・コストの1行サマリをstderrに表示 | `False` |
+| `--stats` | `/generation` を照会して正確なコストとサーバー側の所要時間を補う。**約10秒余分にかかる**（`transcribe-timestamp` を除く） | `False` |
 
 **重要:** `--json` を付けると標準出力はJSONエンベロープ**だけ**になる。テキスト結果は `result.text` に入るので、`--output` を使わずにパースできる。付けない場合は従来どおりテキストがそのまま出る。
 
@@ -162,9 +163,15 @@ aitool tts \
 | `--voice TEXT` | — | — | ボイス識別子（デフォルト: `Zephyr`）。`aitool voices` で確認する |
 | `--format TEXT` | — | — | 出力音声フォーマット（デフォルト: `mp3`） |
 | `--speed FLOAT` | — | — | 再生速度（モデルが対応している場合） |
+| `--format TEXT` | — | — | `mp3` または `pcm`。**モデルによって対応が異なる** |
 | + 共通オプション | | | |
 
 **`--json` の `result` キー:** `output`, `content_type`
+
+**重要な注意:**
+- 既定モデル `google/gemini-3.1-flash-tts-preview` は `pcm` にしか対応していない。`--format mp3`（既定値）だと400エラーになるので、既定モデルでは `--format pcm` を明示すること。mp3が必要なら `--model openai/gpt-4o-mini-tts` のようにmp3対応モデルを指定する。
+- 声質はモデルごとに異なる。`aitool voices --model <モデルID>` で確認してから `--voice` に渡す。
+- `tts` はレスポンスがバイナリで `usage` を持たないため、`--json` だけではコストが `null` になる。コストが必要なら `--stats` を足す（約10秒余分にかかる）。
 
 ---
 
@@ -271,6 +278,18 @@ aitool config --json
 ```
 
 取得できなかった値は `null` になる。コストを知りたいときは `usage.cost_usd`、実測の所要時間は `timing.elapsed_ms` を見る。
+
+### コストが取れる条件
+
+| コマンド | `--json` だけ | `--stats` を足すと |
+|---|---|---|
+| `generate-image` | コストが入る | + provider / サーバー側の所要時間 |
+| `recognize-image` | コストが入る | + provider / サーバー側の所要時間 |
+| `transcribe` | コストが入る | + provider / サーバー側の所要時間 |
+| `tts` | **コストは `null`** | コストが入る |
+| `transcribe-timestamp` | コストなし（OpenAI直叩き） | `--stats` 非対応 |
+
+`tts` だけレスポンスに `usage` が無く、OpenRouterの `/generation` を照会するしかない。この記録は生成直後には引けず、実測で約10秒かかる。そのため既定では照会しない。
 
 `--json` を付けない場合は、`--verbose` で所要時間とコストの1行サマリがstderrに出る。
 

@@ -11,7 +11,15 @@ runner = CliRunner()
 
 
 def test_transcribe_prints_to_stdout_by_default(monkeypatch) -> None:
-    def fake_run(self, audio_path, *, audio_format_override=None, mode="dedicated", prompt=None):
+    def fake_run(
+        self,
+        audio_path,
+        *,
+        audio_format_override=None,
+        mode="dedicated",
+        prompt=None,
+        fetch_generation_stats=False,
+    ):
         return ToolResult("transcribed text")
 
     monkeypatch.setattr("aitool.cli.SpeechToTextTool.run", fake_run)
@@ -34,7 +42,15 @@ def test_transcribe_prints_to_stdout_by_default(monkeypatch) -> None:
 
 
 def test_transcribe_writes_output_when_requested(tmp_path: Path, monkeypatch) -> None:
-    def fake_run(self, audio_path, *, audio_format_override=None, mode="dedicated", prompt=None):
+    def fake_run(
+        self,
+        audio_path,
+        *,
+        audio_format_override=None,
+        mode="dedicated",
+        prompt=None,
+        fetch_generation_stats=False,
+    ):
         return ToolResult("saved text")
 
     monkeypatch.setattr("aitool.cli.SpeechToTextTool.run", fake_run)
@@ -61,7 +77,7 @@ def test_transcribe_writes_output_when_requested(tmp_path: Path, monkeypatch) ->
 
 
 def test_recognize_image_prints_to_stdout(monkeypatch) -> None:
-    def fake_run(self, text, image_paths):
+    def fake_run(self, text, image_paths, *, fetch_generation_stats=False):
         return ToolResult("image description")
 
     monkeypatch.setattr("aitool.cli.ImageRecognitionTool.run", fake_run)
@@ -88,7 +104,7 @@ def test_recognize_image_prints_to_stdout(monkeypatch) -> None:
 def test_recognize_image_json_emits_single_envelope(monkeypatch) -> None:
     """--json 指定時は、テキストと混ざらない JSON エンベロープ 1 個だけを出す。"""
 
-    def fake_run(self, text, image_paths):
+    def fake_run(self, text, image_paths, *, fetch_generation_stats=False):
         return ToolResult(
             "image description",
             CallStats(
@@ -140,7 +156,15 @@ def test_recognize_image_json_emits_single_envelope(monkeypatch) -> None:
 def test_transcribe_json_reports_mode_and_null_usage(monkeypatch) -> None:
     """usage が取得できなくても、キーは null で揃った形で出る。"""
 
-    def fake_run(self, audio_path, *, audio_format_override=None, mode="dedicated", prompt=None):
+    def fake_run(
+        self,
+        audio_path,
+        *,
+        audio_format_override=None,
+        mode="dedicated",
+        prompt=None,
+        fetch_generation_stats=False,
+    ):
         return ToolResult("transcribed text")
 
     monkeypatch.setattr("aitool.cli.SpeechToTextTool.run", fake_run)
@@ -174,7 +198,7 @@ def test_json_error_is_reported_as_envelope(monkeypatch) -> None:
     """失敗時も --json なら JSON エンベロープで返し、終了コードは 1。"""
     from aitool.errors import OpenRouterHTTPError
 
-    def fake_run(self, text, image_paths):
+    def fake_run(self, text, image_paths, *, fetch_generation_stats=False):
         raise OpenRouterHTTPError(429, "rate limited")
 
     monkeypatch.setattr("aitool.cli.ImageRecognitionTool.run", fake_run)
@@ -207,7 +231,7 @@ def test_json_error_is_reported_as_envelope(monkeypatch) -> None:
 def test_error_without_json_goes_to_stderr(monkeypatch) -> None:
     from aitool.errors import OpenRouterResponseError
 
-    def fake_run(self, text, image_paths):
+    def fake_run(self, text, image_paths, *, fetch_generation_stats=False):
         raise OpenRouterResponseError("no text in response")
 
     monkeypatch.setattr("aitool.cli.ImageRecognitionTool.run", fake_run)
@@ -235,7 +259,7 @@ def test_error_without_json_goes_to_stderr(monkeypatch) -> None:
 def test_tts_json_includes_generation_stats(tmp_path: Path, monkeypatch) -> None:
     from aitool.tools.tts import SpeechGenerationResult
 
-    def fake_run(self, text, *, voice, response_format, speed=None):
+    def fake_run(self, text, *, voice, response_format, speed=None, fetch_generation_stats=False):
         return ToolResult(
             SpeechGenerationResult(data=b"audio-bytes", content_type="audio/mpeg"),
             CallStats(
@@ -386,3 +410,54 @@ def test_transcribe_timestamp_json_wraps_transcript_in_envelope(monkeypatch) -> 
     envelope = json.loads(result.stdout)
     assert envelope["command"] == "transcribe-timestamp"
     assert envelope["result"]["transcript"] == {"text": "hello", "segments": []}
+
+
+def test_stats_flag_is_opt_in(monkeypatch) -> None:
+    """--stats を付けたときだけ /generation を照会する（既定は付けない）。"""
+    seen: list[bool] = []
+
+    def fake_run(self, text, image_paths, *, fetch_generation_stats=False):
+        seen.append(fetch_generation_stats)
+        return ToolResult("image description")
+
+    monkeypatch.setattr("aitool.cli.ImageRecognitionTool.run", fake_run)
+
+    base_args = [
+        "recognize-image",
+        "--api-key",
+        "test-key",
+        "--text",
+        "describe",
+        "--image",
+        "image.png",
+        "--model",
+        "example/vision",
+    ]
+    assert runner.invoke(app, base_args).exit_code == 0
+    assert runner.invoke(app, [*base_args, "--stats"]).exit_code == 0
+
+    assert seen == [False, True]
+
+
+def test_complete_stats_skips_lookup_unless_enabled() -> None:
+    """/generation 照会は 10 秒近くかかるため、既定では呼ばない。"""
+    from aitool.tools.base import BaseTool
+
+    class _SpyClient:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def generation(self, generation_id: str):
+            self.calls += 1
+            return {"data": {"total_cost": 0.5}}
+
+    tool = BaseTool("key", "example/model", 10.0)
+    client = _SpyClient()
+
+    unchanged = tool.complete_stats(client, CallStats(generation_id="gen-x"), enabled=False)
+    assert client.calls == 0
+    assert unchanged.cost_usd is None
+
+    filled = tool.complete_stats(client, CallStats(generation_id="gen-x"), enabled=True)
+    assert client.calls == 1
+    assert filled.cost_usd == 0.5

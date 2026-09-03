@@ -166,6 +166,7 @@ class SpeechToTextTool(BaseTool):
         audio_format_override: str | None = None,
         mode: TranscriptionMode = "dedicated",
         prompt: str | None = None,
+        fetch_generation_stats: bool = False,
     ) -> ToolResult[str]:
         """文字起こしを実行し、テキスト結果を返す。
 
@@ -174,6 +175,8 @@ class SpeechToTextTool(BaseTool):
             audio_format_override: 音声フォーマットの明示指定。
             mode: ``dedicated``（STT 専用 API）または ``llm``（チャット補完経由）。
             prompt: ``llm`` モード時の指示プロンプト。未指定時は既定文を使用。
+            fetch_generation_stats: ``/generation`` も照会して provider や
+                サーバー側の所要時間を補うかどうか。
 
         Returns:
             文字起こし結果のテキストと、その呼び出しの計測値。
@@ -182,15 +185,20 @@ class SpeechToTextTool(BaseTool):
             OpenRouterResponseError: レスポンスにテキストが含まれない場合。
         """
         if mode == "llm":
-            return self._run_llm_mode(audio_path, audio_format_override, prompt)
+            return self._run_llm_mode(
+                audio_path, audio_format_override, prompt, fetch_generation_stats
+            )
 
-        return self._run_dedicated_mode(audio_path, audio_format_override)
+        return self._run_dedicated_mode(
+            audio_path, audio_format_override, fetch_generation_stats
+        )
 
     def _run_llm_mode(
         self,
         audio_path: Path,
         audio_format_override: str | None,
         prompt: str | None,
+        fetch_generation_stats: bool,
     ) -> ToolResult[str]:
         """マルチモーダル LLM 経由で文字起こしする。
 
@@ -213,6 +221,11 @@ class SpeechToTextTool(BaseTool):
         )
         with self.create_client() as client:
             response = client.chat_completions(payload)
+            stats = self.complete_stats(
+                client,
+                extract_stats(response),
+                enabled=fetch_generation_stats,
+            )
 
         # ---レスポンスからテキストを取り出す
         try:
@@ -221,12 +234,13 @@ class SpeechToTextTool(BaseTool):
             raise OpenRouterResponseError("LLM transcription response did not include text.") from exc
         if not isinstance(content, str):
             raise OpenRouterResponseError("LLM transcription response content was not text.")
-        return ToolResult(content, extract_stats(response))
+        return ToolResult(content, stats)
 
     def _run_dedicated_mode(
         self,
         audio_path: Path,
         audio_format_override: str | None,
+        fetch_generation_stats: bool,
     ) -> ToolResult[str]:
         """STT 専用エンドポイントで文字起こしする。
 
@@ -245,6 +259,11 @@ class SpeechToTextTool(BaseTool):
         )
         with self.create_client() as client:
             response = client.audio_transcriptions(payload)
+            stats = self.complete_stats(
+                client,
+                extract_stats(response),
+                enabled=fetch_generation_stats,
+            )
 
         # ---レスポンスからテキストを取り出す
         text = response.get("text")
@@ -252,7 +271,7 @@ class SpeechToTextTool(BaseTool):
             raise OpenRouterResponseError("Transcription response did not include text.")
 
         # ---STT 専用エンドポイントはリクエスト指定なしで usage にコストを含む
-        return ToolResult(text, extract_stats(response))
+        return ToolResult(text, stats)
 
 
 @dataclass(slots=True)

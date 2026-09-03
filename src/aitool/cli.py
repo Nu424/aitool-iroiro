@@ -260,7 +260,14 @@ def generate_image(
     ] = None,
     aspect_ratio: Annotated[str | None, typer.Option("--aspect-ratio", help="Image aspect ratio.")] = None,
     image_size: Annotated[str | None, typer.Option("--image-size", help="Image size such as 1K, 2K, 4K.")] = None,
-    model: Annotated[str | None, typer.Option("--model", help="Override the image generation model.")] = None,
+        stats: Annotated[
+        bool,
+        typer.Option(
+            "--stats",
+            help="Query /generation for authoritative cost and server-side timing. Adds ~10s.",
+        ),
+    ] = False,
+model: Annotated[str | None, typer.Option("--model", help="Override the image generation model.")] = None,
     api_key: Annotated[str | None, typer.Option("--api-key", help="OpenRouter API key.")] = None,
     timeout: Annotated[float, typer.Option("--timeout", help="HTTP timeout in seconds.")] = DEFAULT_TIMEOUT_SECONDS,
     json_output: Annotated[bool, typer.Option("--json", help="Print a JSON envelope instead of text.")] = False,
@@ -287,6 +294,7 @@ def generate_image(
             image or [],
             aspect_ratio=aspect_ratio,
             image_size=image_size,
+            fetch_generation_stats=stats,
         )
         save_generated_image(result.value, output)
 
@@ -320,7 +328,14 @@ def recognize_image(
         typer.Option("--image", "-i", help="Input image path. Repeat for multiple images."),
     ],
     output: Annotated[Path | None, typer.Option("--output", "-o", help="Optional text output path.")] = None,
-    model: Annotated[str | None, typer.Option("--model", help="Override the image recognition model.")] = None,
+        stats: Annotated[
+        bool,
+        typer.Option(
+            "--stats",
+            help="Query /generation for authoritative cost and server-side timing. Adds ~10s.",
+        ),
+    ] = False,
+model: Annotated[str | None, typer.Option("--model", help="Override the image recognition model.")] = None,
     api_key: Annotated[str | None, typer.Option("--api-key", help="OpenRouter API key.")] = None,
     timeout: Annotated[float, typer.Option("--timeout", help="HTTP timeout in seconds.")] = DEFAULT_TIMEOUT_SECONDS,
     json_output: Annotated[bool, typer.Option("--json", help="Print a JSON envelope instead of text.")] = False,
@@ -340,7 +355,7 @@ def recognize_image(
         _echo_model(resolved_model, verbose)
 
         tool = ImageRecognitionTool(resolved_api_key, resolved_model, timeout, verbose)
-        result = tool.run(text, image)
+        result = tool.run(text, image, fetch_generation_stats=stats)
         _save_text(result.value, output)
 
         _report(
@@ -367,7 +382,14 @@ def transcribe(
     audio_format: Annotated[str | None, typer.Option("--format", help="Audio format. Defaults to extension.")] = None,
     mode: Annotated[STTMode, typer.Option("--mode", help="Transcription mode.")] = STTMode.dedicated,
     prompt: Annotated[str | None, typer.Option("--prompt", help="Prompt for --mode llm.")] = None,
-    model: Annotated[str | None, typer.Option("--model", help="Override the STT model.")] = None,
+        stats: Annotated[
+        bool,
+        typer.Option(
+            "--stats",
+            help="Query /generation for authoritative cost and server-side timing. Adds ~10s.",
+        ),
+    ] = False,
+model: Annotated[str | None, typer.Option("--model", help="Override the STT model.")] = None,
     api_key: Annotated[str | None, typer.Option("--api-key", help="OpenRouter API key.")] = None,
     timeout: Annotated[float, typer.Option("--timeout", help="HTTP timeout in seconds.")] = DEFAULT_TIMEOUT_SECONDS,
     json_output: Annotated[bool, typer.Option("--json", help="Print a JSON envelope instead of text.")] = False,
@@ -389,6 +411,7 @@ def transcribe(
             audio_format_override=audio_format,
             mode=mode.value,
             prompt=prompt,
+            fetch_generation_stats=stats,
         )
         _save_text(result.value, output)
 
@@ -490,7 +513,14 @@ def tts(
     voice: Annotated[str, typer.Option("--voice", help="Voice identifier. See `aitool voices`.")] = DEFAULT_VOICE,
     response_format: Annotated[str, typer.Option("--format", help="Output audio format.")] = "mp3",
     speed: Annotated[float | None, typer.Option("--speed", help="Playback speed if supported.")] = None,
-    model: Annotated[str | None, typer.Option("--model", help="Override the TTS model.")] = None,
+        stats: Annotated[
+        bool,
+        typer.Option(
+            "--stats",
+            help="Query /generation for authoritative cost and server-side timing. Adds ~10s.",
+        ),
+    ] = False,
+model: Annotated[str | None, typer.Option("--model", help="Override the TTS model.")] = None,
     api_key: Annotated[str | None, typer.Option("--api-key", help="OpenRouter API key.")] = None,
     timeout: Annotated[float, typer.Option("--timeout", help="HTTP timeout in seconds.")] = DEFAULT_TIMEOUT_SECONDS,
     json_output: Annotated[bool, typer.Option("--json", help="Print a JSON envelope instead of text.")] = False,
@@ -503,7 +533,13 @@ def tts(
         _echo_model(resolved_model, verbose)
 
         tool = TextToSpeechTool(resolved_api_key, resolved_model, timeout, verbose)
-        result = tool.run(text, voice=voice, response_format=response_format, speed=speed)
+        result = tool.run(
+            text,
+            voice=voice,
+            response_format=response_format,
+            speed=speed,
+            fetch_generation_stats=stats,
+        )
 
         ensure_output_parent(output)
         output.write_bytes(result.value.data)

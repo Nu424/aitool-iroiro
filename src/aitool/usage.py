@@ -26,10 +26,16 @@ from aitool.errors import AitoolError
 
 # --- /generation 照会のリトライ設定 ---
 
-GENERATION_LOOKUP_ATTEMPTS = 3
-"""``/generation`` 照会の最大試行回数。生成直後は記録が間に合わないことがある。"""
+GENERATION_LOOKUP_ATTEMPTS = 15
+"""``/generation`` 照会の最大試行回数。
 
-GENERATION_LOOKUP_DELAY_SECONDS = 0.25
+生成記録は即座には引けない。実測では TTS の生成直後から記録が引けるように
+なるまで約 9 秒かかり、それまでは 404 が返る。取りこぼさないよう
+``GENERATION_LOOKUP_DELAY_SECONDS`` と合わせて 15 秒程度の猶予を取る。
+この待ち時間があるため、照会は ``--stats`` を指定したときだけ行う。
+"""
+
+GENERATION_LOOKUP_DELAY_SECONDS = 1.0
 """``/generation`` 照会をリトライする際の待機時間（秒）。"""
 
 

@@ -130,6 +130,12 @@ aitool tts \
 
 使える声質はモデルごとに異なります。`aitool voices` で確認できます。既定の `Zephyr` は既定モデル `google/gemini-3.1-flash-tts-preview` 用なので、`--model` を変えたときは `--voice` も合わせて指定してください。
 
+**`--format` の注意:** 既定モデルの `google/gemini-3.1-flash-tts-preview` は `pcm` にしか対応しておらず、`--format mp3`（既定値）だと400エラーになります。既定モデルを使う場合は `--format pcm` を明示してください。mp3が必要な場合は、mp3に対応したモデル（例: `openai/gpt-4o-mini-tts`）を `--model` で指定します。
+
+```bash
+aitool tts --text "テスト" --output ./voice.pcm --format pcm
+```
+
 ### List Models
 
 使用できるモデルを一覧します。
@@ -237,6 +243,22 @@ aitool recognize-image --text "説明して" --image ./photo.png --json
 | `config` | `api_keys`, `models` |
 
 取得できなかった値は `null` になります。`transcribe-timestamp` はOpenAI APIを直接呼ぶためコスト情報が無く、`usage` は `null` 埋めで `timing.elapsed_ms` のみが入ります。
+
+### コストが取れる条件（`--stats`）
+
+`generate-image` / `recognize-image` / `transcribe` はレスポンス自体に `usage` が含まれるため、**何もしなくてもコストが入ります**。
+
+`tts` だけはレスポンスがバイナリで `usage` を持たず、コストを知るにはOpenRouterの `/generation` を照会する必要があります。ただしこの記録は生成直後には引けず、**引けるようになるまで実測で約10秒かかります**。そのため既定では照会せず、`--stats` を付けたときだけ行います。
+
+```bash
+# 速い。tts の usage は null（generation_id だけ入る）
+aitool tts --text "テスト" --output ./v.pcm --format pcm --json
+
+# 約10秒余分にかかるが、コストが入る
+aitool tts --text "テスト" --output ./v.pcm --format pcm --stats --json
+```
+
+`--stats` は他のコマンドでも使えます。その場合はコストに加えて、サーバー側の `provider` / `latency_ms` / `generation_time_ms` が埋まります。
 
 `--json` を付けない場合は、`--verbose` で所要時間とコストの1行サマリをstderrに出せます。
 

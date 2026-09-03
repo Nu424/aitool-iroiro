@@ -155,11 +155,11 @@ def test_enrich_from_generation_retries_then_succeeds(monkeypatch: pytest.Monkey
 def test_enrich_from_generation_gives_up_quietly(monkeypatch: pytest.MonkeyPatch) -> None:
     """照会に失敗しても本処理の結果は得られているので、例外は投げない。"""
     monkeypatch.setattr("aitool.usage.time.sleep", lambda _seconds: None)
-    client = _FakeClient([httpx.ConnectError("boom")] * 3)
+    client = _FakeClient([httpx.ConnectError("boom")] * 4)
 
-    stats = enrich_from_generation(client, CallStats(generation_id="gen-tts"))
+    stats = enrich_from_generation(client, CallStats(generation_id="gen-tts"), attempts=4)
 
-    assert len(client.calls) == 3
+    assert len(client.calls) == 4
     assert stats.cost_usd is None
     assert stats.generation_id == "gen-tts"
 

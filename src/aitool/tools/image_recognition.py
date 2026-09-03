@@ -48,12 +48,20 @@ def build_image_recognition_payload(text: str, image_paths: list[Path], model: s
 class ImageRecognitionTool(BaseTool):
     """テキストと画像から説明・回答テキストを得るツール。"""
 
-    def run(self, text: str, image_paths: list[Path]) -> ToolResult[str]:
+    def run(
+        self,
+        text: str,
+        image_paths: list[Path],
+        *,
+        fetch_generation_stats: bool = False,
+    ) -> ToolResult[str]:
         """画像認識を実行し、モデルのテキスト応答を返す。
 
         Args:
             text: 画像に対する質問・指示テキスト。
             image_paths: 認識対象の画像パス一覧。
+            fetch_generation_stats: ``/generation`` も照会して provider や
+                サーバー側の所要時間を補うかどうか。
 
         Returns:
             モデルが返したテキスト応答と、その呼び出しの計測値。
@@ -65,6 +73,11 @@ class ImageRecognitionTool(BaseTool):
         payload = with_usage_accounting(build_image_recognition_payload(text, image_paths, self.model))
         with self.create_client() as client:
             response = client.chat_completions(payload)
+            stats = self.complete_stats(
+                client,
+                extract_stats(response),
+                enabled=fetch_generation_stats,
+            )
 
         # ---レスポンスからテキストを取り出す
         try:
@@ -76,4 +89,4 @@ class ImageRecognitionTool(BaseTool):
             raise OpenRouterResponseError("Image recognition response content was not text.")
 
         # ---テキストと計測値を返す
-        return ToolResult(content, extract_stats(response))
+        return ToolResult(content, stats)

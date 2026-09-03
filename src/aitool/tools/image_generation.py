@@ -130,6 +130,7 @@ class ImageGenerationTool(BaseTool):
         *,
         aspect_ratio: str | None = None,
         image_size: str | None = None,
+        fetch_generation_stats: bool = False,
     ) -> ToolResult[GeneratedImage]:
         """画像生成を実行し、結果を返す。
 
@@ -138,6 +139,8 @@ class ImageGenerationTool(BaseTool):
             image_paths: 入力画像のパス一覧。
             aspect_ratio: 画像のアスペクト比。
             image_size: 画像サイズ（API の ``resolution`` に対応）。
+            fetch_generation_stats: ``/generation`` も照会して provider や
+                サーバー側の所要時間を補うかどうか。
 
         Returns:
             生成された画像データとメタ情報、およびその呼び出しの計測値。
@@ -155,8 +158,14 @@ class ImageGenerationTool(BaseTool):
         with self.create_client() as client:
             response = client.images(payload)
 
-        # ---Images API はリクエスト指定なしで usage にコストを含む
-        return ToolResult(parse_image_generation_response(response), extract_stats(response))
+            # ---Images API はリクエスト指定なしで usage にコストを含む
+            stats = self.complete_stats(
+                client,
+                extract_stats(response),
+                enabled=fetch_generation_stats,
+            )
+
+        return ToolResult(parse_image_generation_response(response), stats)
 
 
 def save_generated_image(image: GeneratedImage, output_path: Path) -> Path:
