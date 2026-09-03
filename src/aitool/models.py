@@ -40,6 +40,15 @@ MODEL_ENV_VARS: Final[dict[ToolFeature, str]] = {
 }
 """機能ごとのモデル上書き用環境変数名。"""
 
+# --- TTS 既定値 ---
+
+DEFAULT_VOICE: Final[str] = "Zephyr"
+"""TTS の既定ボイス。``DEFAULT_MODELS["tts"]`` が対応する識別子に合わせている。
+
+使用可能なボイスはモデルごとに異なる（``aitool voices`` で確認できる）。
+モデルを変えた場合は ``--voice`` も合わせて指定する必要がある。
+"""
+
 # --- OpenRouter 接続設定 ---
 
 DEFAULT_TIMEOUT_SECONDS: Final[float] = 120.0

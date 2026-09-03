@@ -28,6 +28,7 @@ from aitool.config import (
 )
 from aitool.discovery import (
     FEATURE_LABELS,
+    PRICING_NOTES,
     fetch_models,
     fetch_voices,
     filter_by_keyword,
@@ -36,7 +37,13 @@ from aitool.discovery import (
 )
 from aitool.errors import AitoolError
 from aitool.io import ensure_output_parent
-from aitool.models import DEFAULT_TIMEOUT_SECONDS, MODEL_ENV_VARS, DEFAULT_MODELS, ToolFeature
+from aitool.models import (
+    DEFAULT_MODELS,
+    DEFAULT_TIMEOUT_SECONDS,
+    DEFAULT_VOICE,
+    MODEL_ENV_VARS,
+    ToolFeature,
+)
 from aitool.openrouter import OpenRouterClient
 from aitool.reporting import (
     Stopwatch,
@@ -480,7 +487,7 @@ def transcribe_timestamp(
 def tts(
     text: Annotated[str, typer.Option("--text", "-t", help="Text to synthesize.")],
     output: Annotated[Path, typer.Option("--output", "-o", help="Path to save audio output.")],
-    voice: Annotated[str, typer.Option("--voice", help="Voice identifier. See `aitool voices`.")] = "alloy",
+    voice: Annotated[str, typer.Option("--voice", help="Voice identifier. See `aitool voices`.")] = DEFAULT_VOICE,
     response_format: Annotated[str, typer.Option("--format", help="Output audio format.")] = "mp3",
     speed: Annotated[float | None, typer.Option("--speed", help="Playback speed if supported.")] = None,
     model: Annotated[str | None, typer.Option("--model", help="Override the TTS model.")] = None,
@@ -566,6 +573,11 @@ def models(
         heading = FEATURE_LABELS.get(feature_value or "", "All text-output models")
         typer.echo(f"{heading} - {len(found)} model(s)\n")
         typer.echo(format_model_table(found))
+
+        # ---価格の単位がトークンでない機能には注記を添える
+        note = PRICING_NOTES.get(feature_value or "")
+        if note and found:
+            typer.echo(f"\n{note}")
     except AitoolError as error:
         _fail("models", error, json_output)
 

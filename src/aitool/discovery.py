@@ -39,6 +39,20 @@ FEATURE_LABELS: Final[dict[str, str]] = {
 TOKENS_PER_UNIT: Final[int] = 1_000_000
 """価格表示の単位。API は 1 トークンあたりの価格を返すため 100 万倍して表示する。"""
 
+PRICING_NOTES: Final[dict[str, str]] = {
+    "stt": "Note: STT models are not billed per token (often per audio second or minute). "
+    "The price columns are the raw API values scaled by 1M and are NOT comparable to text models.",
+    "tts": "Note: TTS models may be billed per character rather than per token. "
+    "The price columns are the raw API values scaled by 1M.",
+}
+"""価格の単位がトークンでない機能に添える注記。
+
+OpenRouter の ``/models`` は音声系モデルでも ``prompt`` / ``completion`` の
+2 キーしか返さず、その単位が何かを示さない。テキストモデルと同じ
+「100 万トークンあたり」として読むと誤解を招くため、注記を添える。
+正確な単価が必要な場合は JSON 出力の ``pricing`` （API の生の値）を使う。
+"""
+
 
 # --- モデル情報 ---
 
@@ -56,6 +70,7 @@ class ModelInfo:
         input_modalities: 入力モダリティ一覧。
         output_modalities: 出力モダリティ一覧。
         supported_voices: 対応ボイス識別子の一覧（TTS モデルのみ）。
+        pricing: API が返した生の価格オブジェクト。単位はモデルにより異なる。
     """
 
     id: str
@@ -66,6 +81,7 @@ class ModelInfo:
     input_modalities: list[str]
     output_modalities: list[str]
     supported_voices: list[str]
+    pricing: dict[str, Any]
 
     def to_dict(self) -> dict[str, Any]:
         """JSON 出力用の辞書に変換する。"""
@@ -78,6 +94,7 @@ class ModelInfo:
             "input_modalities": self.input_modalities,
             "output_modalities": self.output_modalities,
             "supported_voices": self.supported_voices,
+            "pricing": self.pricing,
         }
 
 
@@ -129,6 +146,7 @@ def parse_model(record: Mapping[str, Any]) -> ModelInfo:
         input_modalities=_str_list(architecture.get("input_modalities")),
         output_modalities=_str_list(architecture.get("output_modalities")),
         supported_voices=_str_list(record.get("supported_voices")),
+        pricing=dict(pricing),
     )
 
 

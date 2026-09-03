@@ -1,14 +1,22 @@
 ---
 name: aitool-iroiro
 description: |
-  OpenRouter API / OpenAI API経由でマルチモーダルAIタスクをCLIから実行するツール群 (aitool-iroiro) の使い方スキル。
+  OpenRouterの各モデルをCLIから呼び出すツール群 (aitool-iroiro) の使い方スキル。
   画像生成・画像認識・音声文字起こし・音声合成が必要なとき、または `aitool` コマンドを使うタスクが来たときは必ずこのスキルを参照すること。
   具体的には「画像を編集して」「この音声をテキストにして」「テキストを読み上げて」「画像を説明して」などのリクエストが対象。
+  「どのモデルが使える？」「どんな声が選べる？」といった確認にも `aitool models` / `aitool voices` で答えられる。
 ---
 
 # aitool-iroiro スキル
 
-OpenRouter API と OpenAI API を使ったマルチモーダルAI CLIツール群。`aitool` コマンド1本で画像生成・画像認識・文字起こし・タイムスタンプ付き文字起こし・音声合成を実行できる。
+OpenRouterの各モデルをCLIから呼び出すツール群。`aitool` コマンド1本で画像生成・画像認識・文字起こし・タイムスタンプ付き文字起こし・音声合成を実行できる。
+
+コマンドは2種類ある。
+
+- **実行系** — 実際にモデルを呼ぶ: `generate-image` / `recognize-image` / `transcribe` / `transcribe-timestamp` / `tts`
+- **情報系** — 使えるモデルや設定を調べる（コストなし）: `models` / `voices` / `config`
+
+`--model` に何を指定できるか迷ったら、まず `aitool models --feature <機能>` を見る。
 
 ## コマンドリファレンス
 
@@ -19,8 +27,10 @@ OpenRouter API と OpenAI API を使ったマルチモーダルAI CLIツール�
 | `--model TEXT` | 使用モデルを上書き | 環境変数またはプログラム内定数 |
 | `--api-key TEXT` | APIキーを指定（タイムスタンプ付き文字起こしはOpenAI、それ以外はOpenRouter） | `.env` / 環境変数 |
 | `--timeout FLOAT` | HTTPタイムアウト（秒） | `120.0` |
-| `--json` | メタ情報をJSON形式で標準出力に表示 | `False` |
-| `--verbose` | 追加ステータスをstderrに表示 | `False` |
+| `--json` | 結果とメタ情報をJSONエンベロープ1個として標準出力に出す（人間向け表示は抑制） | `False` |
+| `--verbose` | 使用モデルと、所要時間・コストの1行サマリをstderrに表示 | `False` |
+
+**重要:** `--json` を付けると標準出力はJSONエンベロープ**だけ**になる。テキスト結果は `result.text` に入るので、`--output` を使わずにパースできる。付けない場合は従来どおりテキストがそのまま出る。
 
 ---
 
@@ -46,7 +56,7 @@ aitool generate-image \
 | `--image-size TEXT` | — | — | 画像サイズ（例: `1K`, `2K`, `4K`） |
 | + 共通オプション | | | |
 
-**`--json` 出力のキー:** `output`, `model`, `mime`, `message`
+**`--json` の `result` キー:** `output`, `mime`, `message`
 
 ---
 
@@ -68,7 +78,7 @@ aitool recognize-image \
 | `--output PATH` | `-o` | — | テキスト結果の保存先（省略→標準出力） |
 | + 共通オプション | | | |
 
-**`--json` 出力のキー:** `output`, `model`
+**`--json` の `result` キー:** `text`, `output`
 
 ---
 
@@ -96,7 +106,7 @@ aitool transcribe \
 | `--prompt TEXT` | — | — | `--mode llm` 使用時のプロンプト |
 | + 共通オプション | | | |
 
-**`--json` 出力のキー:** `output`, `model`, `mode`
+**`--json` の `result` キー:** `text`, `output`, `mode`
 
 ---
 
@@ -124,9 +134,11 @@ aitool transcribe-timestamp \
 | `--granularity TEXT` | — | — | `segment`（デフォルト）、`word`、`both` |
 | `--language TEXT` | — | — | 入力言語の ISO-639-1 コード |
 | `--prompt TEXT` | — | — | スタイル誘導用プロンプト |
-| + 共通オプション（`--json` 除く） | | | |
+| + 共通オプション | | | |
 
-注意: `OPENAI_API_KEY` が必要。既定モデルは `whisper-1`（25MB まで）。`gpt-4o-transcribe` 系は `verbose_json` 非対応のため使用不可。
+**`--json` の `result` キー:** `transcript`, `output`
+
+注意: `OPENAI_API_KEY` が必要。既定モデルは `whisper-1`（25MB まで）。`gpt-4o-transcribe` 系は `verbose_json` 非対応のため使用不可。OpenAI APIはコスト情報を返さないため、`usage` は `null` 埋めで `timing.elapsed_ms` のみ入る。
 
 ---
 
@@ -138,7 +150,7 @@ aitool transcribe-timestamp \
 aitool tts \
   --text "こんにちは。テストです。" \
   --output ./voice.mp3 \
-  [--voice alloy] \
+  [--voice Zephyr] \
   [--format mp3] \
   [--speed 1.0]
 ```
@@ -147,12 +159,124 @@ aitool tts \
 |-----------|------|------|------|
 | `--text TEXT` | `-t` | ✅ | 合成するテキスト |
 | `--output PATH` | `-o` | ✅ | 音声ファイルの保存先パス |
-| `--voice TEXT` | — | — | ボイス識別子（デフォルト: `alloy`） |
+| `--voice TEXT` | — | — | ボイス識別子（デフォルト: `Zephyr`）。`aitool voices` で確認する |
 | `--format TEXT` | — | — | 出力音声フォーマット（デフォルト: `mp3`） |
 | `--speed FLOAT` | — | — | 再生速度（モデルが対応している場合） |
 | + 共通オプション | | | |
 
-**`--json` 出力のキー:** `output`, `model`, `content_type`, `generation_id`
+**`--json` の `result` キー:** `output`, `content_type`
+
+---
+
+## 情報系サブコマンド
+
+「どのモデルが使える？」「どんな声が選べる？」「今どのモデルが既定？」に答えるためのコマンド。実行系と違ってモデルを呼ばないので、コストはかからない。
+
+### `models` — 使用できるモデルの確認
+
+```bash
+aitool models --feature tts
+aitool models --feature image-generation --search gemini
+aitool models --feature stt --json
+```
+
+| オプション | 短縮 | 説明 |
+|-----------|------|------|
+| `--feature TEXT` | `-f` | 機能で絞り込む（下表） |
+| `--search TEXT` | `-s` | モデルIDまたは表示名の部分一致で絞り込む |
+
+`--feature` に指定できる値:
+
+| 値 | 対象 | 対応コマンド |
+|---|---|---|
+| `image-generation` | 画像を出力できるモデル | `generate-image` |
+| `image-recognition` | 画像を入力できるモデル | `recognize-image` |
+| `stt` | 文字起こし専用モデル | `transcribe --mode dedicated` |
+| `stt-llm` | 音声を入力できるLLM | `transcribe --mode llm` |
+| `tts` | 音声を出力できるモデル | `tts` |
+
+**注意:** `--feature` を省略するとテキスト出力モデルの一覧になる。TTS・STTのモデルはOpenRouter APIの仕様上、`--feature` を付けないと一覧に現れない。
+
+**価格の注意:** STT・TTSのモデルはトークン単位で課金されない（音声の秒数・分数、文字数など）。OpenRouter APIは単位を返さないため、表の `$IN/1M` 列をテキストモデルと比較してはいけない。正確な単価が必要なら `--json` の `pricing`（APIの生の値）を見る。
+
+**`--json` の `result` キー:** `feature`, `count`, `models`（各要素は `id`, `name`, `context_length`, `prompt_price_per_1m`, `completion_price_per_1m`, `input_modalities`, `output_modalities`, `supported_voices`）
+
+---
+
+### `voices` — 使用できるTTS声質の確認
+
+TTSモデルごとに使える声質を一覧する。ここに出た識別子をそのまま `tts --voice` に渡せる。
+
+```bash
+aitool voices
+aitool voices --model gemini
+aitool voices --json
+```
+
+| オプション | 短縮 | 説明 |
+|-----------|------|------|
+| `--model TEXT` | `-m` | モデルIDの部分一致で絞り込む |
+
+一覧はOpenRouter APIの `supported_voices` から取得するので常に最新。対応ボイスを公開していないモデルは表示されない。
+
+**`--json` の `result` キー:** `count`, `models`（各要素は `id`, `name`, `voices`）
+
+---
+
+### `config` — 設定の確認
+
+APIキーの設定状況と、`--model` を省略したときに使われる既定モデルを、その取得元つきで表示する。APIキーの値そのものは表示しない。
+
+```bash
+aitool config
+aitool config --json
+```
+
+モデル指定まわりで想定と違う挙動をしたときは、まずこれを見る。
+
+**`--json` の `result` キー:** `api_keys`（`env_var`, `is_set`, `source`）, `models`（`feature`, `env_var`, `model`, `source`）
+
+---
+
+## JSON出力（`--json`）
+
+すべてのコマンドで共通のエンベロープが標準出力に**1個だけ**出る。人間向け表示は抑制されるので、そのままパースできる。
+
+```json
+{
+  "ok": true,
+  "command": "recognize-image",
+  "model": "google/gemini-3-flash-preview",
+  "provider": "Google",
+  "result": { "text": "机の上に...", "output": null },
+  "usage": {
+    "prompt_tokens": 1234,
+    "completion_tokens": 56,
+    "total_tokens": 1290,
+    "cost_usd": 0.00123,
+    "generation_id": "gen-xxx"
+  },
+  "timing": { "elapsed_ms": 2143, "generation_time_ms": 1200, "latency_ms": 250 }
+}
+```
+
+失敗時も同じ形で返り、終了コードは `1`。
+
+```json
+{
+  "ok": false,
+  "command": "recognize-image",
+  "error": { "type": "OpenRouterHTTPError", "message": "...", "status_code": 429 }
+}
+```
+
+取得できなかった値は `null` になる。コストを知りたいときは `usage.cost_usd`、実測の所要時間は `timing.elapsed_ms` を見る。
+
+`--json` を付けない場合は、`--verbose` で所要時間とコストの1行サマリがstderrに出る。
+
+```
+[2143 ms | $0.000011 | 492 tokens | Google]
+```
 
 ---
 

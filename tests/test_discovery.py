@@ -6,6 +6,7 @@ from typer.testing import CliRunner
 from aitool.cli import app
 from aitool.discovery import (
     FEATURE_FILTERS,
+    PRICING_NOTES,
     fetch_models,
     fetch_voices,
     filter_by_keyword,
@@ -80,6 +81,39 @@ def test_parse_model_converts_per_token_price_to_per_million() -> None:
     assert model.completion_price == pytest.approx(20.0)
     assert model.output_modalities == ["speech"]
     assert model.supported_voices == ["Zephyr", "Puck", "Kore"]
+
+
+def test_parse_model_keeps_raw_pricing() -> None:
+    """音声系モデルの単価はトークン単位でないため、生の値も残す。"""
+    model = parse_model(
+        {
+            "id": "openai/whisper-1",
+            "pricing": {"prompt": "0.006", "completion": "0"},
+        }
+    )
+
+    assert model.pricing == {"prompt": "0.006", "completion": "0"}
+    assert model.to_dict()["pricing"] == {"prompt": "0.006", "completion": "0"}
+
+
+def test_pricing_notes_cover_audio_features() -> None:
+    """トークン課金でない機能には注記を出す。"""
+    assert "stt" in PRICING_NOTES
+    assert "tts" in PRICING_NOTES
+    assert "image-recognition" not in PRICING_NOTES
+
+
+def test_models_command_shows_pricing_note_for_stt(monkeypatch) -> None:
+    monkeypatch.setattr(OpenRouterClient, "models", lambda self, params=None: MODELS_RESPONSE)
+
+    with_note = runner.invoke(app, ["models", "--api-key", "test-key", "--feature", "stt"])
+    without_note = runner.invoke(
+        app, ["models", "--api-key", "test-key", "--feature", "image-recognition"]
+    )
+
+    assert with_note.exit_code == 0
+    assert "not billed per token" in with_note.stdout
+    assert "not billed per token" not in without_note.stdout
 
 
 def test_parse_model_tolerates_missing_fields() -> None:
