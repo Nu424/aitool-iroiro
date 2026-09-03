@@ -8,7 +8,8 @@ from typing import Any
 
 from aitool.errors import OpenRouterResponseError
 from aitool.io import image_data_url
-from aitool.tools.base import BaseTool
+from aitool.tools.base import BaseTool, ToolResult
+from aitool.usage import extract_stats, with_usage_accounting
 
 
 # --- リクエストペイロード構築 ---
@@ -47,7 +48,7 @@ def build_image_recognition_payload(text: str, image_paths: list[Path], model: s
 class ImageRecognitionTool(BaseTool):
     """テキストと画像から説明・回答テキストを得るツール。"""
 
-    def run(self, text: str, image_paths: list[Path]) -> str:
+    def run(self, text: str, image_paths: list[Path]) -> ToolResult[str]:
         """画像認識を実行し、モデルのテキスト応答を返す。
 
         Args:
@@ -55,13 +56,13 @@ class ImageRecognitionTool(BaseTool):
             image_paths: 認識対象の画像パス一覧。
 
         Returns:
-            モデルが返したテキスト応答。
+            モデルが返したテキスト応答と、その呼び出しの計測値。
 
         Raises:
             OpenRouterResponseError: レスポンスにテキストが含まれない場合。
         """
         # ---ペイロードを作成し、OpenRouter API を呼び出す
-        payload = build_image_recognition_payload(text, image_paths, self.model)
+        payload = with_usage_accounting(build_image_recognition_payload(text, image_paths, self.model))
         with self.create_client() as client:
             response = client.chat_completions(payload)
 
@@ -74,5 +75,5 @@ class ImageRecognitionTool(BaseTool):
         if not isinstance(content, str):
             raise OpenRouterResponseError("Image recognition response content was not text.")
 
-        # ---テキストを返す
-        return content
+        # ---テキストと計測値を返す
+        return ToolResult(content, extract_stats(response))

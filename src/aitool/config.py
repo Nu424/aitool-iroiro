@@ -52,6 +52,25 @@ def _env_file_values(path: Path) -> dict[str, str]:
     return {key: value for key, value in values.items() if value is not None}
 
 
+def _lookup_env_chain_with_source(key: str, cwd: Path) -> tuple[str | None, str | None]:
+    """cwd の .env → ~/.env.global → プロセス環境変数の順で値と取得元を解決する。
+
+    Args:
+        key: 取得する環境変数名。
+        cwd: カレントディレクトリ（.env の探索起点）。
+
+    Returns:
+        ``(値, 取得元ラベル)`` のタプル。見つからない場合は ``(None, None)``。
+    """
+    for env_path, label in ((cwd / ".env", ".env"), (Path.home() / ".env.global", "~/.env.global")):
+        value = _clean(_env_file_values(env_path).get(key))
+        if value:
+            return value, label
+
+    value = _clean(os.environ.get(key))
+    return (value, "environment") if value else (None, None)
+
+
 def _lookup_env_chain(key: str, cwd: Path) -> str | None:
     """cwd の .env → ~/.env.global → プロセス環境変数の順で値を解決する。
 
@@ -62,12 +81,7 @@ def _lookup_env_chain(key: str, cwd: Path) -> str | None:
     Returns:
         最初に見つかった非空の値。いずれにも無い場合は None。
     """
-    for env_path in (cwd / ".env", Path.home() / ".env.global"):
-        value = _clean(_env_file_values(env_path).get(key))
-        if value:
-            return value
-
-    return _clean(os.environ.get(key))
+    return _lookup_env_chain_with_source(key, cwd)[0]
 
 
 # --- 公開 API ---
@@ -164,3 +178,38 @@ def resolve_model(
 
     # 解決できなかった場合、DEFAULT_MODELS から既定モデル名を取得する
     return DEFAULT_MODELS[feature]
+
+
+def describe_api_key(env_var: str, cwd: Path | None = None) -> tuple[bool, str | None]:
+    """API キーが設定済みかどうかと、その取得元を返す。
+
+    値そのものは返さない（``aitool config`` で秘密を表示しないため）。
+
+    Args:
+        env_var: 対象の環境変数名。
+        cwd: .env を探す起点ディレクトリ。省略時はカレントディレクトリ。
+
+    Returns:
+        ``(設定済みかどうか, 取得元ラベル)`` のタプル。
+    """
+    value, source = _lookup_env_chain_with_source(env_var, cwd or Path.cwd())
+    return value is not None, source
+
+
+def describe_model(feature: ToolFeature, cwd: Path | None = None) -> tuple[str, str]:
+    """機能ごとの既定モデルと、その取得元を返す。
+
+    ``--model`` を渡さずに実行した場合に実際に使われるモデルを示す。
+
+    Args:
+        feature: 対象ツール機能。
+        cwd: .env を探す起点ディレクトリ。省略時はカレントディレクトリ。
+
+    Returns:
+        ``(モデル名, 取得元ラベル)`` のタプル。取得元は ``.env`` /
+        ``~/.env.global`` / ``environment`` / ``built-in default`` のいずれか。
+    """
+    value, source = _lookup_env_chain_with_source(MODEL_ENV_VARS[feature], cwd or Path.cwd())
+    if value and source:
+        return value, source
+    return DEFAULT_MODELS[feature], "built-in default"

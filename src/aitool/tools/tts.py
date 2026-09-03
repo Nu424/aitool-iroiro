@@ -7,7 +7,8 @@ from typing import Any
 
 import httpx
 
-from aitool.tools.base import BaseTool
+from aitool.tools.base import BaseTool, ToolResult
+from aitool.usage import CallStats
 
 
 @dataclass(slots=True)
@@ -17,12 +18,10 @@ class SpeechGenerationResult:
     Attributes:
         data: 生成された音声のバイナリデータ。
         content_type: レスポンスの Content-Type ヘッダー値。
-        generation_id: OpenRouter の生成 ID（X-Generation-Id ヘッダー）。
     """
 
     data: bytes
     content_type: str | None
-    generation_id: str | None
 
 
 # --- リクエストペイロード構築 ---
@@ -73,8 +72,12 @@ class TextToSpeechTool(BaseTool):
         voice: str,
         response_format: str,
         speed: float | None = None,
-    ) -> SpeechGenerationResult:
+    ) -> ToolResult[SpeechGenerationResult]:
         """音声合成を実行し、バイナリデータとメタ情報を返す。
+
+        音声合成のレスポンスはバイナリで ``usage`` を持たないため、
+        ``X-Generation-Id`` を手掛かりに ``/generation`` を照会して
+        トークン数・コスト・所要時間を補う。
 
         Args:
             text: 読み上げるテキスト。
@@ -83,7 +86,7 @@ class TextToSpeechTool(BaseTool):
             speed: 再生速度。
 
         Returns:
-            生成された音声データとレスポンスヘッダー情報。
+            生成された音声データと、その呼び出しの計測値。
         """
         # ---ペイロードを作成し、OpenRouter API を呼び出す
         payload = build_speech_payload(
@@ -96,11 +99,19 @@ class TextToSpeechTool(BaseTool):
         with self.create_client() as client:
             data, headers = client.audio_speech(payload)
 
+            # ---接続を閉じる前に /generation を照会して計測値を補う
+            stats = self.complete_stats(
+                client,
+                CallStats(generation_id=_get_header(headers, "X-Generation-Id")),
+            )
+
         # ---レスポンスから音声データとメタ情報を取り出し、構造的に返却する
-        return SpeechGenerationResult(
-            data=data,
-            content_type=_get_header(headers, "Content-Type"),
-            generation_id=_get_header(headers, "X-Generation-Id"),
+        return ToolResult(
+            SpeechGenerationResult(
+                data=data,
+                content_type=_get_header(headers, "Content-Type"),
+            ),
+            stats,
         )
 
 

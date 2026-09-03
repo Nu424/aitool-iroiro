@@ -70,6 +70,23 @@ class OpenRouterClient:
             return
         raise OpenRouterHTTPError(response.status_code, response.text)
 
+    def get_json(self, endpoint: str, params: Mapping[str, Any] | None = None) -> dict[str, Any]:
+        """JSON レスポンスを期待する GET リクエストを送る。
+
+        Args:
+            endpoint: API エンドポイントパス（例: ``/models``）。
+            params: クエリパラメータ。
+
+        Returns:
+            パース済みの JSON レスポンス辞書。
+
+        Raises:
+            OpenRouterHTTPError: HTTP エラーが返った場合。
+        """
+        response = self._client.get(endpoint, params=dict(params) if params else None)
+        self._raise_for_status(response)
+        return response.json()
+
     def post_json(self, endpoint: str, payload: Mapping[str, Any]) -> dict[str, Any]:
         """JSON レスポンスを期待する POST リクエストを送る。
 
@@ -153,3 +170,29 @@ class OpenRouterClient:
             生成された音声データとレスポンスヘッダーのタプル。
         """
         return self.post_bytes("/audio/speech", payload)
+
+    def models(self, params: Mapping[str, Any] | None = None) -> dict[str, Any]:
+        """モデル一覧 API を呼び出す。
+
+        ``input_modalities`` / ``output_modalities`` クエリで機能ごとに絞り込める。
+        既定の一覧はテキスト出力モデルのみで、TTS・STT モデルは
+        ``output_modalities`` を明示しないと返らない点に注意。
+
+        Args:
+            params: クエリパラメータ。
+
+        Returns:
+            API レスポンスの JSON 辞書。
+        """
+        return self.get_json("/models", params)
+
+    def generation(self, generation_id: str) -> dict[str, Any]:
+        """生成記録 API を呼び出し、コストや所要時間を取得する。
+
+        Args:
+            generation_id: 対象の生成 ID。
+
+        Returns:
+            API レスポンスの JSON 辞書。
+        """
+        return self.get_json("/generation", {"id": generation_id})

@@ -13,7 +13,8 @@ from typing import Any, Literal
 from aitool.errors import OpenAIResponseError, OpenRouterResponseError
 from aitool.io import audio_format, encode_file_base64, require_input_file
 from aitool.openai_client import OpenAIClient
-from aitool.tools.base import BaseTool
+from aitool.tools.base import BaseTool, ToolResult
+from aitool.usage import CallStats, extract_stats, with_usage_accounting
 
 TranscriptionMode = Literal["dedicated", "llm"]
 """文字起こしモード。``dedicated`` は STT 専用 API、``llm`` はチャット補完経由。"""
@@ -165,7 +166,7 @@ class SpeechToTextTool(BaseTool):
         audio_format_override: str | None = None,
         mode: TranscriptionMode = "dedicated",
         prompt: str | None = None,
-    ) -> str:
+    ) -> ToolResult[str]:
         """文字起こしを実行し、テキスト結果を返す。
 
         Args:
@@ -175,7 +176,7 @@ class SpeechToTextTool(BaseTool):
             prompt: ``llm`` モード時の指示プロンプト。未指定時は既定文を使用。
 
         Returns:
-            文字起こし結果のテキスト。
+            文字起こし結果のテキストと、その呼び出しの計測値。
 
         Raises:
             OpenRouterResponseError: レスポンスにテキストが含まれない場合。
@@ -190,7 +191,7 @@ class SpeechToTextTool(BaseTool):
         audio_path: Path,
         audio_format_override: str | None,
         prompt: str | None,
-    ) -> str:
+    ) -> ToolResult[str]:
         """マルチモーダル LLM 経由で文字起こしする。
 
         Args:
@@ -199,14 +200,16 @@ class SpeechToTextTool(BaseTool):
             prompt: 指示プロンプト。
 
         Returns:
-            文字起こし結果のテキスト。
+            文字起こし結果のテキストと、その呼び出しの計測値。
         """
         # ---ペイロードを作成し、OpenRouter API を呼び出す
-        payload = build_llm_transcription_payload(
-            audio_path,
-            self.model,
-            prompt=prompt or "この音声ファイルを文字起こししてください。",
-            audio_format_override=audio_format_override,
+        payload = with_usage_accounting(
+            build_llm_transcription_payload(
+                audio_path,
+                self.model,
+                prompt=prompt or "この音声ファイルを文字起こししてください。",
+                audio_format_override=audio_format_override,
+            )
         )
         with self.create_client() as client:
             response = client.chat_completions(payload)
@@ -218,13 +221,13 @@ class SpeechToTextTool(BaseTool):
             raise OpenRouterResponseError("LLM transcription response did not include text.") from exc
         if not isinstance(content, str):
             raise OpenRouterResponseError("LLM transcription response content was not text.")
-        return content
+        return ToolResult(content, extract_stats(response))
 
     def _run_dedicated_mode(
         self,
         audio_path: Path,
         audio_format_override: str | None,
-    ) -> str:
+    ) -> ToolResult[str]:
         """STT 専用エンドポイントで文字起こしする。
 
         Args:
@@ -232,7 +235,7 @@ class SpeechToTextTool(BaseTool):
             audio_format_override: 音声フォーマットの明示指定。
 
         Returns:
-            文字起こし結果のテキスト。
+            文字起こし結果のテキストと、その呼び出しの計測値。
         """
         # ---ペイロードを作成し、OpenRouter API を呼び出す
         payload = build_transcription_payload(
@@ -247,7 +250,9 @@ class SpeechToTextTool(BaseTool):
         text = response.get("text")
         if not isinstance(text, str):
             raise OpenRouterResponseError("Transcription response did not include text.")
-        return text
+
+        # ---STT 専用エンドポイントはリクエスト指定なしで usage にコストを含む
+        return ToolResult(text, extract_stats(response))
 
 
 @dataclass(slots=True)
@@ -267,7 +272,7 @@ class TimestampTranscriptionTool:
         granularity: TimestampGranularity = "segment",
         language: str | None = None,
         prompt: str | None = None,
-    ) -> dict[str, Any]:
+    ) -> ToolResult[dict[str, Any]]:
         """タイムスタンプ付き文字起こしを実行し、verbose_json を返す。
 
         Args:
@@ -278,7 +283,8 @@ class TimestampTranscriptionTool:
             prompt: 文字起こしのスタイルを誘導するプロンプト（任意）。
 
         Returns:
-            OpenAI ``verbose_json`` レスポンス辞書。
+            OpenAI ``verbose_json`` レスポンス辞書。OpenAI API はコスト情報を
+            返さないため、計測値は所要時間のみが埋まる。
 
         Raises:
             OpenAIResponseError: レスポンスに ``text`` が含まれない場合。
@@ -297,4 +303,4 @@ class TimestampTranscriptionTool:
         text = response.get("text")
         if not isinstance(text, str):
             raise OpenAIResponseError("Timestamp transcription response did not include text.")
-        return response
+        return ToolResult(response, CallStats())

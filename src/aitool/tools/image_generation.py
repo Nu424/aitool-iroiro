@@ -9,7 +9,8 @@ from typing import Any
 
 from aitool.errors import OpenRouterResponseError
 from aitool.io import ensure_output_parent, extension_for_mime, image_data_url
-from aitool.tools.base import BaseTool
+from aitool.tools.base import BaseTool, ToolResult
+from aitool.usage import extract_stats
 
 
 @dataclass(slots=True)
@@ -129,7 +130,7 @@ class ImageGenerationTool(BaseTool):
         *,
         aspect_ratio: str | None = None,
         image_size: str | None = None,
-    ) -> GeneratedImage:
+    ) -> ToolResult[GeneratedImage]:
         """画像生成を実行し、結果を返す。
 
         Args:
@@ -139,7 +140,7 @@ class ImageGenerationTool(BaseTool):
             image_size: 画像サイズ（API の ``resolution`` に対応）。
 
         Returns:
-            生成された画像データとメタ情報。
+            生成された画像データとメタ情報、およびその呼び出しの計測値。
 
         Raises:
             OpenRouterResponseError: レスポンスに画像が含まれない場合。
@@ -154,7 +155,8 @@ class ImageGenerationTool(BaseTool):
         with self.create_client() as client:
             response = client.images(payload)
 
-        return parse_image_generation_response(response)
+        # ---Images API はリクエスト指定なしで usage にコストを含む
+        return ToolResult(parse_image_generation_response(response), extract_stats(response))
 
 
 def save_generated_image(image: GeneratedImage, output_path: Path) -> Path:
