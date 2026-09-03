@@ -285,11 +285,14 @@ aitool config --json
 |---|---|---|
 | `generate-image` | コストが入る | + provider / サーバー側の所要時間 |
 | `recognize-image` | コストが入る | + provider / サーバー側の所要時間 |
-| `transcribe` | コストが入る | + provider / サーバー側の所要時間 |
+| `transcribe --mode llm` | コストが入る | + provider / サーバー側の所要時間 |
+| `transcribe --mode dedicated` | コストが入る（トークン数は `null`） | 変化なし（生成IDが返らないため） |
 | `tts` | **コストは `null`** | コストが入る |
 | `transcribe-timestamp` | コストなし（OpenAI直叩き） | `--stats` 非対応 |
 
 `tts` だけレスポンスに `usage` が無く、OpenRouterの `/generation` を照会するしかない。この記録は生成直後には引けず、実測で約10秒かかる。そのため既定では照会しない。
+
+`transcribe --mode dedicated` は `usage` に秒数ベースのコストを返すが、トークン数と生成IDは返さないため `total_tokens` は `null` になる。
 
 `--json` を付けない場合は、`--verbose` で所要時間とコストの1行サマリがstderrに出る。
 

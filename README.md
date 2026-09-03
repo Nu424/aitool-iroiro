@@ -123,17 +123,21 @@ aitool transcribe-timestamp \
 ```bash
 aitool tts \
   --text "こんにちは。これは音声合成のテストです。" \
-  --output ./voice.mp3 \
+  --output ./voice.pcm \
   --voice Zephyr \
-  --format mp3
+  --format pcm
 ```
 
 使える声質はモデルごとに異なります。`aitool voices` で確認できます。既定の `Zephyr` は既定モデル `google/gemini-3.1-flash-tts-preview` 用なので、`--model` を変えたときは `--voice` も合わせて指定してください。
 
-**`--format` の注意:** 既定モデルの `google/gemini-3.1-flash-tts-preview` は `pcm` にしか対応しておらず、`--format mp3`（既定値）だと400エラーになります。既定モデルを使う場合は `--format pcm` を明示してください。mp3が必要な場合は、mp3に対応したモデル（例: `openai/gpt-4o-mini-tts`）を `--model` で指定します。
+**`--format` の注意:** 既定モデルの `google/gemini-3.1-flash-tts-preview` は `pcm` にしか対応しておらず、`--format` の既定値である `mp3` のままだと400エラーになります。既定モデルでは上のように `--format pcm` を明示してください。mp3が欲しい場合はmp3対応モデルを指定します。
 
 ```bash
-aitool tts --text "テスト" --output ./voice.pcm --format pcm
+aitool tts \
+  --text "こんにちは。" \
+  --output ./voice.mp3 \
+  --model openai/gpt-4o-mini-tts \
+  --voice alloy
 ```
 
 ### List Models
@@ -258,13 +262,14 @@ aitool tts --text "テスト" --output ./v.pcm --format pcm --json
 aitool tts --text "テスト" --output ./v.pcm --format pcm --stats --json
 ```
 
-`--stats` は他のコマンドでも使えます。その場合はコストに加えて、サーバー側の `provider` / `latency_ms` / `generation_time_ms` が埋まります。
+`--stats` は他のコマンドでも使えます。その場合はサーバー側の `provider` / `latency_ms` / `generation_time_ms` が追加で埋まります。ただし `transcribe --mode dedicated` は生成IDを返さないため `--stats` を付けても変化しません（コストは付けなくても入ります）。
 
 `--json` を付けない場合は、`--verbose` で所要時間とコストの1行サマリをstderrに出せます。
 
 ```bash
-aitool tts --text "テスト" --output ./voice.mp3 --verbose
-# stderr: [2143 ms | $0.000011 | 492 tokens | Google]
+aitool recognize-image --text "説明して" --image ./photo.png --verbose
+# stderr: Using model: google/gemini-3-flash-preview
+# stderr: [5134 ms | $0.000550 | 1095 tokens | Google]
 ```
 
 ## Agent Skill
