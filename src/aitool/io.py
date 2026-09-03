@@ -28,21 +28,6 @@ AUDIO_FORMAT_BY_SUFFIX = {
 }
 """音声拡張子から OpenRouter 用フォーマット名への対応。"""
 
-VIDEO_MIME_BY_SUFFIX = {
-    ".mp4": "video/mp4",
-    ".mpeg": "video/mpeg",
-    ".mov": "video/quicktime",
-    ".avi": "video/avi",
-    ".flv": "video/x-flv",
-    ".mpg": "video/mpg",
-    ".webm": "video/webm",
-    ".wmv": "video/wmv",
-    ".3gp": "video/3gpp",
-    ".3gpp": "video/3gpp",
-}
-"""動画拡張子から Gemini 用 MIME タイプへの対応。"""
-
-
 # --- 入力ファイルの検証 ---
 
 
@@ -149,33 +134,6 @@ def audio_format(path: Path, explicit_format: str | None = None) -> str:
             f"Known extensions: {supported}"
         )
     return inferred
-
-
-def video_mime_type(path: Path) -> str:
-    """動画ファイルの MIME タイプを取得する。
-
-    Args:
-        path: 動画ファイルのパス。
-
-    Returns:
-        Gemini API に渡す MIME タイプ（例: ``video/mp4``）。
-
-    Raises:
-        FileInputError: 未対応の動画形式の場合。
-    """
-    require_input_file(path)
-
-    # ---まず、拡張子をVIDEO_MIME_BY_SUFFIX に問い合わせてMIMEタイプを取得する
-    suffix = path.suffix.lower()
-    mime = VIDEO_MIME_BY_SUFFIX.get(suffix)
-    if not mime: # 登録されていない場合は、mimetypes から推定する
-        guessed_mime, _ = mimetypes.guess_type(path)
-        mime = guessed_mime if guessed_mime in VIDEO_MIME_BY_SUFFIX.values() else None
-    if not mime: # それでも未対応の場合は、エラーを発生させる
-        supported = ", ".join(sorted(VIDEO_MIME_BY_SUFFIX))
-        raise FileInputError(f"Unsupported video format for {path}. Supported: {supported}")
-
-    return mime
 
 
 # --- data URL のデコード ---

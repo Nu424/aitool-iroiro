@@ -15,7 +15,6 @@ ToolFeature = Literal[
     "stt",
     "stt_timestamp",
     "tts",
-    "video_recognition",
 ]
 """ツール機能を識別するリテラル型。"""
 
@@ -27,7 +26,6 @@ DEFAULT_MODELS: Final[dict[ToolFeature, str]] = {
     "stt": "openai/whisper-large-v3-turbo",
     "stt_timestamp": "whisper-1",
     "tts": "google/gemini-3.1-flash-tts-preview",
-    "video_recognition": "gemini-3.5-flash",
 }
 """機能ごとの既定モデル名。env 未設定時の最終フォールバック。"""
 
@@ -39,7 +37,6 @@ MODEL_ENV_VARS: Final[dict[ToolFeature, str]] = {
     "stt": "AITOOL_STT_MODEL",
     "stt_timestamp": "AITOOL_STT_TIMESTAMP_MODEL",
     "tts": "AITOOL_TTS_MODEL",
-    "video_recognition": "AITOOL_VIDEO_RECOGNITION_MODEL",
 }
 """機能ごとのモデル上書き用環境変数名。"""
 

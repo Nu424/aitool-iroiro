@@ -15,9 +15,6 @@ from aitool.models import DEFAULT_MODELS, MODEL_ENV_VARS, ToolFeature
 API_KEY_ENV_VAR = "OPENROUTER_API_KEY"
 """OpenRouter API キーを格納する環境変数名。"""
 
-GOOGLE_API_KEY_ENV_VAR = "GEMINI_API_KEY"
-"""Google GenAI API キーを格納する環境変数名。"""
-
 OPENAI_API_KEY_ENV_VAR = "OPENAI_API_KEY"
 """OpenAI API キーを格納する環境変数名。"""
 
@@ -105,35 +102,6 @@ def resolve_api_key(explicit_api_key: str | None = None, cwd: Path | None = None
     raise ConfigError(
         "OpenRouter API key was not found. Pass --api-key or set "
         "OPENROUTER_API_KEY in .env or ~/.env.global."
-    )
-
-
-def resolve_google_api_key(explicit_api_key: str | None = None, cwd: Path | None = None) -> str:
-    """Google GenAI API キーを優先順位に従って解決する。
-
-    解決順: ``--api-key`` → cwd の ``.env`` → ``~/.env.global`` → 環境変数。
-
-    Args:
-        explicit_api_key: CLI などから明示的に渡された API キー。
-        cwd: .env を探す起点ディレクトリ。省略時はカレントディレクトリ。
-
-    Returns:
-        解決された API キー文字列。
-
-    Raises:
-        ConfigError: いずれのソースからもキーが取得できない場合。
-    """
-    explicit = _clean(explicit_api_key)
-    if explicit:
-        return explicit
-
-    value = _lookup_env_chain(GOOGLE_API_KEY_ENV_VAR, cwd or Path.cwd())
-    if value:
-        return value
-
-    raise ConfigError(
-        "Google GenAI API key was not found. Pass --api-key or set "
-        "GEMINI_API_KEY in .env or ~/.env.global."
     )
 
 
