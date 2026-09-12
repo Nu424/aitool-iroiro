@@ -186,6 +186,62 @@ class OpenRouterClient:
         """
         return self.get_json("/models", params)
 
+    def videos(self, payload: Mapping[str, Any]) -> dict[str, Any]:
+        """動画生成ジョブを投入する。
+
+        生成は非同期で、返るのはジョブ ID と状態のみ。完了は ``video()`` で
+        確認し、動画本体は ``video_content()`` で取得する。
+
+        Args:
+            payload: 動画生成リクエストの JSON ペイロード。
+
+        Returns:
+            ``id`` / ``status`` / ``polling_url`` を含む JSON 辞書。
+        """
+        return self.post_json("/videos", payload)
+
+    def video(self, job_id: str) -> dict[str, Any]:
+        """動画生成ジョブの状態を取得する。
+
+        Args:
+            job_id: ``videos()`` が返したジョブ ID。
+
+        Returns:
+            ``status`` / ``unsigned_urls`` / ``usage`` を含む JSON 辞書。
+        """
+        return self.get_json(f"/videos/{job_id}")
+
+    def video_content(self, job_id: str, index: int = 0) -> tuple[bytes, httpx.Headers]:
+        """完了した動画生成ジョブの動画本体を取得する。
+
+        Args:
+            job_id: 対象のジョブ ID。
+            index: 複数出力時のインデックス。
+
+        Returns:
+            動画データとレスポンスヘッダーのタプル。
+
+        Raises:
+            OpenRouterHTTPError: HTTP エラーが返った場合。
+        """
+        response = self._client.get(
+            f"/videos/{job_id}/content",
+            params={"index": index},
+            follow_redirects=True,
+        )
+        self._raise_for_status(response)
+        return response.content, response.headers
+
+    def video_models(self) -> dict[str, Any]:
+        """動画生成モデルの一覧 API を呼び出す。
+
+        ``/models`` とは別エンドポイントで、対応解像度・尺・価格 SKU を返す。
+
+        Returns:
+            API レスポンスの JSON 辞書。
+        """
+        return self.get_json("/videos/models")
+
     def generation(self, generation_id: str) -> dict[str, Any]:
         """生成記録 API を呼び出し、コストや所要時間を取得する。
 

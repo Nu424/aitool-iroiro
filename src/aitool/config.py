@@ -8,7 +8,14 @@ from pathlib import Path
 from dotenv import dotenv_values
 
 from aitool.errors import ConfigError
-from aitool.models import DEFAULT_MODELS, MODEL_ENV_VARS, ToolFeature
+from aitool.models import (
+    DEFAULT_MODELS,
+    DEFAULT_VIDEO_BACKEND,
+    MODEL_ENV_VARS,
+    VIDEO_BACKEND_ENV_VAR,
+    ToolFeature,
+    VideoBackend,
+)
 
 # --- 環境変数名 ---
 
@@ -17,6 +24,12 @@ API_KEY_ENV_VAR = "OPENROUTER_API_KEY"
 
 OPENAI_API_KEY_ENV_VAR = "OPENAI_API_KEY"
 """OpenAI API キーを格納する環境変数名。"""
+
+FAL_API_KEY_ENV_VAR = "FAL_KEY"
+"""fal API キーを格納する環境変数名。fal 公式クライアントと同じ名前にしている。"""
+
+VIDEO_BACKENDS: tuple[VideoBackend, ...] = ("openrouter", "fal")
+"""動画生成で選択できるバックエンドの一覧。"""
 
 
 # --- 内部ヘルパー ---
@@ -87,12 +100,19 @@ def _lookup_env_chain(key: str, cwd: Path) -> str | None:
 # --- 公開 API ---
 
 
-def resolve_api_key(explicit_api_key: str | None = None, cwd: Path | None = None) -> str:
-    """OpenRouter API キーを優先順位に従って解決する。
+def _resolve_key(
+    env_var: str,
+    label: str,
+    explicit_api_key: str | None,
+    cwd: Path | None,
+) -> str:
+    """API キーを優先順位に従って解決する共通処理。
 
-    解決順: ``--api-key`` → cwd の ``.env`` → ``~/.env.global`` → 環境変数。
+    解決順: 明示指定 → cwd の ``.env`` → ``~/.env.global`` → 環境変数。
 
     Args:
+        env_var: キーを格納する環境変数名。
+        label: エラーメッセージに使うサービス名。
         explicit_api_key: CLI などから明示的に渡された API キー。
         cwd: .env を探す起点ディレクトリ。省略時はカレントディレクトリ。
 
@@ -108,19 +128,19 @@ def resolve_api_key(explicit_api_key: str | None = None, cwd: Path | None = None
         return explicit
 
     # ---.env または ~/.env.global から API キーを取得する
-    value = _lookup_env_chain(API_KEY_ENV_VAR, cwd or Path.cwd())
+    value = _lookup_env_chain(env_var, cwd or Path.cwd())
     if value:
         return value
 
     # ---いずれのソースからもキーが取得できない場合はエラーを送出する
     raise ConfigError(
-        "OpenRouter API key was not found. Pass --api-key or set "
-        "OPENROUTER_API_KEY in .env or ~/.env.global."
+        f"{label} API key was not found. Pass --api-key or set "
+        f"{env_var} in .env or ~/.env.global."
     )
 
 
-def resolve_openai_api_key(explicit_api_key: str | None = None, cwd: Path | None = None) -> str:
-    """OpenAI API キーを優先順位に従って解決する。
+def resolve_api_key(explicit_api_key: str | None = None, cwd: Path | None = None) -> str:
+    """OpenRouter API キーを優先順位に従って解決する。
 
     解決順: ``--api-key`` → cwd の ``.env`` → ``~/.env.global`` → 環境変数。
 
@@ -134,18 +154,29 @@ def resolve_openai_api_key(explicit_api_key: str | None = None, cwd: Path | None
     Raises:
         ConfigError: いずれのソースからもキーが取得できない場合。
     """
-    explicit = _clean(explicit_api_key)
-    if explicit:
-        return explicit
+    return _resolve_key(API_KEY_ENV_VAR, "OpenRouter", explicit_api_key, cwd)
 
-    value = _lookup_env_chain(OPENAI_API_KEY_ENV_VAR, cwd or Path.cwd())
-    if value:
-        return value
 
-    raise ConfigError(
-        "OpenAI API key was not found. Pass --api-key or set "
-        "OPENAI_API_KEY in .env or ~/.env.global."
-    )
+def resolve_openai_api_key(explicit_api_key: str | None = None, cwd: Path | None = None) -> str:
+    """OpenAI API キーを優先順位に従って解決する。
+
+    解決順は ``resolve_api_key`` と同じ。
+
+    Raises:
+        ConfigError: いずれのソースからもキーが取得できない場合。
+    """
+    return _resolve_key(OPENAI_API_KEY_ENV_VAR, "OpenAI", explicit_api_key, cwd)
+
+
+def resolve_fal_api_key(explicit_api_key: str | None = None, cwd: Path | None = None) -> str:
+    """fal API キーを優先順位に従って解決する。
+
+    解決順は ``resolve_api_key`` と同じ。
+
+    Raises:
+        ConfigError: いずれのソースからもキーが取得できない場合。
+    """
+    return _resolve_key(FAL_API_KEY_ENV_VAR, "fal", explicit_api_key, cwd)
 
 
 def resolve_model(
@@ -213,3 +244,48 @@ def describe_model(feature: ToolFeature, cwd: Path | None = None) -> tuple[str, 
     if value and source:
         return value, source
     return DEFAULT_MODELS[feature], "built-in default"
+
+
+def resolve_video_backend(
+    explicit_backend: str | None = None,
+    cwd: Path | None = None,
+) -> VideoBackend:
+    """動画生成バックエンドを優先順位に従って解決する。
+
+    解決順: ``--backend`` → ``AITOOL_VIDEO_GENERATION_BACKEND``
+    （.env / ~/.env.global / 環境変数）→ ``models.DEFAULT_VIDEO_BACKEND``。
+
+    Args:
+        explicit_backend: CLI などから明示的に渡されたバックエンド名。
+        cwd: .env を探す起点ディレクトリ。省略時はカレントディレクトリ。
+
+    Returns:
+        ``openrouter`` または ``fal``。
+
+    Raises:
+        ConfigError: 未知のバックエンド名が指定された場合。
+    """
+    value = _clean(explicit_backend) or _lookup_env_chain(VIDEO_BACKEND_ENV_VAR, cwd or Path.cwd())
+    if not value:
+        return DEFAULT_VIDEO_BACKEND
+
+    normalized = value.lower()
+    if normalized not in VIDEO_BACKENDS:
+        choices = ", ".join(VIDEO_BACKENDS)
+        raise ConfigError(f"Unknown video backend: {value}. Choose one of: {choices}.")
+    return normalized  # type: ignore[return-value]
+
+
+def describe_video_backend(cwd: Path | None = None) -> tuple[str, str]:
+    """``--backend`` を省略したときの動画生成バックエンドと、その取得元を返す。
+
+    Args:
+        cwd: .env を探す起点ディレクトリ。省略時はカレントディレクトリ。
+
+    Returns:
+        ``(バックエンド名, 取得元ラベル)`` のタプル。
+    """
+    value, source = _lookup_env_chain_with_source(VIDEO_BACKEND_ENV_VAR, cwd or Path.cwd())
+    if value and source:
+        return value, source
+    return DEFAULT_VIDEO_BACKEND, "built-in default"

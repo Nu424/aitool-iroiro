@@ -51,3 +51,30 @@ class OpenAIHTTPError(AitoolError):
 
 class OpenAIResponseError(AitoolError):
     """HTTP は成功したが、OpenAI レスポンスの構造が想定と異なる場合に送出する。"""
+
+
+class FalHTTPError(AitoolError):
+    """fal が非成功の HTTP ステータスを返した場合に送出する。"""
+
+    def __init__(self, status_code: int, body: str) -> None:
+        """HTTP エラー情報を保持して初期化する。
+
+        Args:
+            status_code: HTTP ステータスコード。
+            body: レスポンス本文（エラー詳細）。
+        """
+        self.status_code = status_code
+        self.body = body
+        super().__init__(f"fal request failed with status {status_code}: {body}")
+
+
+class FalResponseError(AitoolError):
+    """HTTP は成功したが、fal レスポンスの構造が想定と異なる場合に送出する。"""
+
+
+class VideoGenerationError(AitoolError):
+    """動画生成ジョブがサーバー側で失敗として終了した場合に送出する。"""
+
+
+class PollingTimeoutError(AitoolError):
+    """非同期ジョブが ``--max-wait`` 以内に完了しなかった場合に送出する。"""

@@ -27,7 +27,11 @@ FEATURE_FILTERS: Final[dict[str, dict[str, str]]] = {
 }
 """CLI の ``--feature`` 値から ``/models`` のクエリパラメータへの対応。"""
 
+VIDEO_FEATURE: Final[str] = "video-generation"
+"""動画生成モデルの機能名。``/models`` ではなく ``/videos/models`` から取得する。"""
+
 FEATURE_LABELS: Final[dict[str, str]] = {
+    "video-generation": "Video generation (generate-video, OpenRouter backend)",
     "image-generation": "Image generation (generate-image)",
     "image-recognition": "Image recognition (recognize-image)",
     "stt": "Speech to text (transcribe --mode dedicated)",
@@ -272,3 +276,122 @@ def format_voice_list(models: list[ModelInfo]) -> str:
         voices = ", ".join(model.supported_voices)
         blocks.append(f"{model.id}  ({len(model.supported_voices)} voices)\n  {voices}")
     return "\n\n".join(blocks)
+
+
+# --- 動画生成モデル ---
+
+
+@dataclass(slots=True)
+class VideoModelInfo:
+    """``/videos/models`` が返すモデル 1 件分の情報。
+
+    Attributes:
+        id: モデルスラッグ（``generate-video --model`` に渡す値）。
+        supported_resolutions: 対応解像度の一覧。
+        supported_durations: 対応する動画の長さ（秒）の一覧。
+        supported_aspect_ratios: 対応アスペクト比の一覧。
+        pricing_skus: API が返した生の価格 SKU。キー名に単位（秒・トークン）が含まれる。
+    """
+
+    id: str
+    supported_resolutions: list[str]
+    supported_durations: list[int]
+    supported_aspect_ratios: list[str]
+    pricing_skus: dict[str, Any]
+
+    def to_dict(self) -> dict[str, Any]:
+        """JSON 出力用の辞書に変換する。"""
+        return {
+            "id": self.id,
+            "supported_resolutions": self.supported_resolutions,
+            "supported_durations": self.supported_durations,
+            "supported_aspect_ratios": self.supported_aspect_ratios,
+            "pricing_skus": self.pricing_skus,
+        }
+
+
+def parse_video_model(record: Mapping[str, Any]) -> VideoModelInfo:
+    """``/videos/models`` の 1 レコードを ``VideoModelInfo`` に変換する。"""
+    durations = record.get("supported_durations")
+    pricing = record.get("pricing_skus")
+    return VideoModelInfo(
+        id=str(record.get("id", "")),
+        supported_resolutions=_str_list(record.get("supported_resolutions")),
+        supported_durations=[
+            item for item in (durations if isinstance(durations, list) else []) if isinstance(item, int)
+        ],
+        supported_aspect_ratios=_str_list(record.get("supported_aspect_ratios")),
+        pricing_skus=dict(pricing) if isinstance(pricing, Mapping) else {},
+    )
+
+
+def fetch_video_models(client: OpenRouterClient, keyword: str | None = None) -> list[VideoModelInfo]:
+    """動画生成モデルの一覧を取得する。
+
+    Args:
+        client: OpenRouter クライアント。
+        keyword: モデル ID の部分一致で絞り込むキーワード（任意）。
+
+    Returns:
+        モデル情報のリスト。ID の昇順にソート済み。
+    """
+    response = client.video_models()
+    records = response.get("data")
+    if not isinstance(records, list):
+        return []
+
+    models = sorted(
+        (parse_video_model(record) for record in records if isinstance(record, Mapping)),
+        key=lambda model: model.id,
+    )
+    if not keyword:
+        return models
+    needle = keyword.lower()
+    return [model for model in models if needle in model.id.lower()]
+
+
+def _format_durations(durations: list[int]) -> str:
+    """対応する長さの一覧を ``4-15s`` のような範囲表記にする。"""
+    if not durations:
+        return "-"
+    low, high = min(durations), max(durations)
+    return f"{low}s" if low == high else f"{low}-{high}s"
+
+
+def _format_pricing_skus(pricing: Mapping[str, Any], limit: int = 3) -> str:
+    """価格 SKU を ``key=value`` の列挙にする。多い場合は先頭数件に省略する。"""
+    if not pricing:
+        return "-"
+    items = [f"{key}={value}" for key, value in pricing.items()]
+    shown = ", ".join(items[:limit])
+    return shown if len(items) <= limit else f"{shown}, ... (+{len(items) - limit})"
+
+
+def format_video_model_table(models: list[VideoModelInfo]) -> str:
+    """動画生成モデル一覧を等幅の表として整形する。
+
+    Args:
+        models: 表示するモデル一覧。
+
+    Returns:
+        改行区切りの表文字列。モデルが無い場合は案内文。
+    """
+    if not models:
+        return "(no models matched)"
+
+    header = ("MODEL", "RESOLUTIONS", "DURATION", "PRICING (USD)")
+    rows = [
+        (
+            model.id,
+            ", ".join(model.supported_resolutions) or "-",
+            _format_durations(model.supported_durations),
+            _format_pricing_skus(model.pricing_skus),
+        )
+        for model in models
+    ]
+    widths = [max(len(row[index]) for row in (header, *rows)) for index in range(len(header))]
+    lines = [
+        "  ".join(cell.ljust(widths[index]) for index, cell in enumerate(row)).rstrip()
+        for row in (header, *rows)
+    ]
+    return "\n".join(lines)

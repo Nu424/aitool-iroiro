@@ -19,20 +19,27 @@ import typer
 
 from aitool.config import (
     API_KEY_ENV_VAR,
+    FAL_API_KEY_ENV_VAR,
     OPENAI_API_KEY_ENV_VAR,
     describe_api_key,
     describe_model,
+    describe_video_backend,
     resolve_api_key,
+    resolve_fal_api_key,
     resolve_model,
     resolve_openai_api_key,
+    resolve_video_backend,
 )
 from aitool.discovery import (
     FEATURE_LABELS,
     PRICING_NOTES,
+    VIDEO_FEATURE,
     fetch_models,
+    fetch_video_models,
     fetch_voices,
     filter_by_keyword,
     format_model_table,
+    format_video_model_table,
     format_voice_list,
 )
 from aitool.errors import AitoolError
@@ -40,8 +47,11 @@ from aitool.io import ensure_output_parent
 from aitool.models import (
     DEFAULT_MODELS,
     DEFAULT_TIMEOUT_SECONDS,
+    DEFAULT_VIDEO_MAX_WAIT_SECONDS,
+    DEFAULT_VIDEO_POLL_INTERVAL_SECONDS,
     DEFAULT_VOICE,
     MODEL_ENV_VARS,
+    VIDEO_BACKEND_ENV_VAR,
     ToolFeature,
 )
 from aitool.openrouter import OpenRouterClient
@@ -56,12 +66,19 @@ from aitool.tools.image_generation import ImageGenerationTool, save_generated_im
 from aitool.tools.image_recognition import ImageRecognitionTool
 from aitool.tools.stt import SpeechToTextTool, TimestampTranscriptionTool
 from aitool.tools.tts import TextToSpeechTool
+from aitool.tools.video_generation import (
+    FalVideoTool,
+    OpenRouterVideoTool,
+    VideoRequest,
+    parse_params,
+    save_generated_video,
+)
 from aitool.usage import CallStats
 
 # --- Typer アプリケーション ---
 
 app = typer.Typer(
-    help="Call OpenRouter models from the command line: images, vision, STT and TTS.",
+    help="Call OpenRouter models from the command line: images, video, vision, STT and TTS.",
     no_args_is_help=True,
 )
 
@@ -89,6 +106,8 @@ class STTGranularity(str, Enum):
 class ModelFeature(str, Enum):
     """``models`` サブコマンドで絞り込める機能。"""
 
+    video_generation = "video-generation"
+    """動画生成モデル（OpenRouter バックエンドのみ。``/videos/models`` から取得）。"""
     image_generation = "image-generation"
     """画像出力に対応したモデル。"""
     image_recognition = "image-recognition"
@@ -315,6 +334,121 @@ model: Annotated[str | None, typer.Option("--model", help="Override the image ge
         )
     except AitoolError as error:
         _fail("generate-image", error, json_output)
+
+
+# --- サブコマンド: 動画生成 ---
+
+
+@app.command("generate-video")
+def generate_video(
+    text: Annotated[str, typer.Option("--text", "-t", help="Prompt text.")],
+    output: Annotated[Path, typer.Option("--output", "-o", help="Path to save the generated video.")],
+    image: Annotated[
+        Path | None,
+        typer.Option("--image", "-i", help="First-frame image path for image-to-video."),
+    ] = None,
+    duration: Annotated[int | None, typer.Option("--duration", help="Video length in seconds.")] = None,
+    resolution: Annotated[str | None, typer.Option("--resolution", help="Resolution such as 720p, 768p, 1080p.")] = None,
+    aspect_ratio: Annotated[str | None, typer.Option("--aspect-ratio", help="Aspect ratio such as 16:9.")] = None,
+    audio: Annotated[
+        bool | None,
+        typer.Option("--audio/--no-audio", help="Generate audio. Omit to use the model default."),
+    ] = None,
+    seed: Annotated[int | None, typer.Option("--seed", help="Random seed.")] = None,
+    param: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--param",
+            "-p",
+            help="Backend-specific parameter as KEY=VALUE (JSON values allowed). Repeatable.",
+        ),
+    ] = None,
+    backend: Annotated[
+        str | None,
+        typer.Option("--backend", "-b", help="Video backend: openrouter (default) or fal."),
+    ] = None,
+    model: Annotated[str | None, typer.Option("--model", help="Override the video generation model.")] = None,
+    api_key: Annotated[str | None, typer.Option("--api-key", help="API key for the selected backend.")] = None,
+    poll_interval: Annotated[
+        float,
+        typer.Option("--poll-interval", help="Seconds between job status checks."),
+    ] = DEFAULT_VIDEO_POLL_INTERVAL_SECONDS,
+    max_wait: Annotated[
+        float,
+        typer.Option("--max-wait", help="Maximum seconds to wait for the job to finish."),
+    ] = DEFAULT_VIDEO_MAX_WAIT_SECONDS,
+    timeout: Annotated[float, typer.Option("--timeout", help="HTTP timeout in seconds.")] = DEFAULT_TIMEOUT_SECONDS,
+    json_output: Annotated[bool, typer.Option("--json", help="Print a JSON envelope instead of text.")] = False,
+    verbose: Annotated[bool, typer.Option("--verbose", help="Print extra status to stderr.")] = False,
+) -> None:
+    """テキストまたは画像から動画を生成する。
+
+    生成は非同期で、投入したジョブを ``--poll-interval`` 間隔で確認し、
+    ``--max-wait`` まで待つ。バックエンドは既定で OpenRouter。
+    OpenRouter に無いモデル（H3 Max Turbo など）は ``--backend fal`` で使う。
+    """
+    watch = Stopwatch()
+    try:
+        # 設定解決（バックエンドごとに API キーと既定モデルが異なる）
+        resolved_backend = resolve_video_backend(backend)
+        if resolved_backend == "fal":
+            resolved_api_key = resolve_fal_api_key(api_key)
+            resolved_model = resolve_model("video_generation_fal", model)
+        else:
+            resolved_api_key, resolved_model = _resolve_tool_settings(
+                "video_generation",
+                api_key=api_key,
+                model=model,
+            )
+        if verbose:
+            typer.echo(f"Using backend: {resolved_backend}", err=True)
+        _echo_model(resolved_model, verbose)
+
+        request = VideoRequest(
+            text=text,
+            image_path=image,
+            duration=duration,
+            resolution=resolution,
+            aspect_ratio=aspect_ratio,
+            generate_audio=audio,
+            seed=seed,
+            extra=parse_params(param),
+        )
+        progress = (lambda message: typer.echo(message, err=True)) if verbose else None
+
+        # API 呼び出しとファイル保存
+        tool: OpenRouterVideoTool | FalVideoTool
+        if resolved_backend == "fal":
+            tool = FalVideoTool(resolved_api_key, resolved_model, timeout, verbose)
+        else:
+            tool = OpenRouterVideoTool(resolved_api_key, resolved_model, timeout, verbose)
+        result = tool.run(
+            request,
+            poll_interval=poll_interval,
+            max_wait=max_wait,
+            progress=progress,
+        )
+        save_generated_video(result.value, output)
+
+        # 結果表示
+        _report(
+            "generate-video",
+            model=resolved_model,
+            result={
+                "output": str(output),
+                "mime": result.value.mime,
+                "backend": resolved_backend,
+                "job_id": result.value.job_id,
+                "expanded_prompt": result.value.expanded_prompt,
+            },
+            stats=result.stats,
+            watch=watch,
+            json_output=json_output,
+            verbose=verbose,
+            human_message=f"Saved video to {output}",
+        )
+    except AitoolError as error:
+        _fail("generate-video", error, json_output)
 
 
 # --- サブコマンド: 画像認識 ---
@@ -586,6 +720,11 @@ def models(
         resolved_api_key = resolve_api_key(api_key)
         feature_value = feature.value if feature else None
 
+        # ---動画生成モデルは別エンドポイント・別スキーマなので分岐する
+        if feature_value == VIDEO_FEATURE:
+            _list_video_models(resolved_api_key, search, timeout, watch, json_output, verbose)
+            return
+
         with OpenRouterClient(resolved_api_key, timeout=timeout) as client:
             found = filter_by_keyword(fetch_models(client, feature_value), search)
 
@@ -616,6 +755,43 @@ def models(
             typer.echo(f"\n{note}")
     except AitoolError as error:
         _fail("models", error, json_output)
+
+
+def _list_video_models(
+    api_key: str,
+    search: str | None,
+    timeout: float,
+    watch: Stopwatch,
+    json_output: bool,
+    verbose: bool,
+) -> None:
+    """``models --feature video-generation`` の本体。``/videos/models`` を表示する。"""
+    with OpenRouterClient(api_key, timeout=timeout) as client:
+        found = fetch_video_models(client, search)
+
+    if json_output:
+        _report(
+            "models",
+            model=None,
+            result={
+                "feature": VIDEO_FEATURE,
+                "count": len(found),
+                "models": [entry.to_dict() for entry in found],
+            },
+            stats=CallStats(),
+            watch=watch,
+            json_output=True,
+            verbose=verbose,
+        )
+        return
+
+    typer.echo(f"{FEATURE_LABELS[VIDEO_FEATURE]} - {len(found)} model(s)\n")
+    typer.echo(format_video_model_table(found))
+    if found:
+        typer.echo(
+            "\nNote: pricing_skus are raw API values; the unit is in the key name "
+            "(per second, per token, cents). fal-only models are not listed."
+        )
 
 
 # --- サブコマンド: ボイス一覧 ---
@@ -685,7 +861,7 @@ def config(
 
     # ---API キーは有無と取得元のみを収集する
     keys = []
-    for env_var in (API_KEY_ENV_VAR, OPENAI_API_KEY_ENV_VAR):
+    for env_var in (API_KEY_ENV_VAR, OPENAI_API_KEY_ENV_VAR, FAL_API_KEY_ENV_VAR):
         is_set, source = describe_api_key(env_var)
         keys.append({"env_var": env_var, "is_set": is_set, "source": source})
 
@@ -702,11 +878,15 @@ def config(
             }
         )
 
+    # ---動画生成のバックエンドも --backend 省略時の値と取得元を示す
+    backend_value, backend_source = describe_video_backend()
+    video_backend = {"env_var": VIDEO_BACKEND_ENV_VAR, "backend": backend_value, "source": backend_source}
+
     if json_output:
         _report(
             "config",
             model=None,
-            result={"api_keys": keys, "models": features},
+            result={"api_keys": keys, "models": features, "video_backend": video_backend},
             stats=CallStats(),
             watch=watch,
             json_output=True,
@@ -726,6 +906,9 @@ def config(
         feature_cell = f"{entry['feature']:<{feature_width}}"
         model_cell = f"{entry['model']:<{model_width}}"
         typer.echo(f"  {feature_cell}  {model_cell}  ({entry['source']})")
+
+    typer.echo("\nVideo backend:")
+    typer.echo(f"  {video_backend['backend']}  ({video_backend['source']})")
 
 
 if __name__ == "__main__":

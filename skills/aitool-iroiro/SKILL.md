@@ -2,18 +2,18 @@
 name: aitool-iroiro
 description: |
   OpenRouterの各モデルをCLIから呼び出すツール群 (aitool-iroiro) の使い方スキル。
-  画像生成・画像認識・音声文字起こし・音声合成が必要なとき、または `aitool` コマンドを使うタスクが来たときは必ずこのスキルを参照すること。
-  具体的には「画像を編集して」「この音声をテキストにして」「テキストを読み上げて」「画像を説明して」などのリクエストが対象。
+  画像生成・動画生成・画像認識・音声文字起こし・音声合成が必要なとき、または `aitool` コマンドを使うタスクが来たときは必ずこのスキルを参照すること。
+  具体的には「画像を編集して」「この画像を動かして」「短い動画を作って」「この音声をテキストにして」「テキストを読み上げて」「画像を説明して」などのリクエストが対象。
   「どのモデルが使える？」「どんな声が選べる？」といった確認にも `aitool models` / `aitool voices` で答えられる。
 ---
 
 # aitool-iroiro スキル
 
-OpenRouterの各モデルをCLIから呼び出すツール群。`aitool` コマンド1本で画像生成・画像認識・文字起こし・タイムスタンプ付き文字起こし・音声合成を実行できる。
+OpenRouterの各モデルをCLIから呼び出すツール群。`aitool` コマンド1本で画像生成・動画生成・画像認識・文字起こし・タイムスタンプ付き文字起こし・音声合成を実行できる。
 
 コマンドは2種類ある。
 
-- **実行系** — 実際にモデルを呼ぶ: `generate-image` / `recognize-image` / `transcribe` / `transcribe-timestamp` / `tts`
+- **実行系** — 実際にモデルを呼ぶ: `generate-image` / `generate-video` / `recognize-image` / `transcribe` / `transcribe-timestamp` / `tts`
 - **情報系** — 使えるモデルや設定を調べる（コストなし）: `models` / `voices` / `config`
 
 `--model` に何を指定できるか迷ったら、まず `aitool models --feature <機能>` を見る。
@@ -25,11 +25,11 @@ OpenRouterの各モデルをCLIから呼び出すツール群。`aitool` コマ�
 | オプション | 説明 | デフォルト |
 |-----------|------|-----------|
 | `--model TEXT` | 使用モデルを上書き | 環境変数またはプログラム内定数 |
-| `--api-key TEXT` | APIキーを指定（タイムスタンプ付き文字起こしはOpenAI、それ以外はOpenRouter） | `.env` / 環境変数 |
+| `--api-key TEXT` | APIキーを指定（タイムスタンプ付き文字起こしはOpenAI、`generate-video --backend fal` はfal、それ以外はOpenRouter） | `.env` / 環境変数 |
 | `--timeout FLOAT` | HTTPタイムアウト（秒） | `120.0` |
 | `--json` | 結果とメタ情報をJSONエンベロープ1個として標準出力に出す（人間向け表示は抑制） | `False` |
 | `--verbose` | 使用モデルと、所要時間・コストの1行サマリをstderrに表示 | `False` |
-| `--stats` | `/generation` を照会して正確なコストとサーバー側の所要時間を補う。**約10秒余分にかかる**（`transcribe-timestamp` を除く） | `False` |
+| `--stats` | `/generation` を照会して正確なコストとサーバー側の所要時間を補う。**約10秒余分にかかる**（`transcribe-timestamp` / `generate-video` を除く） | `False` |
 
 **重要:** `--json` を付けると標準出力はJSONエンベロープ**だけ**になる。テキスト結果は `result.text` に入るので、`--output` を使わずにパースできる。付けない場合は従来どおりテキストがそのまま出る。
 
@@ -60,6 +60,60 @@ aitool generate-image \
 **`--json` の `result` キー:** `output`, `mime`, `message`
 
 ---
+
+### `generate-video` — 動画生成
+
+テキストプロンプトから動画生成（t2v）、または入力画像を先頭フレームにした動画生成（i2v）を行う。**生成には数十秒〜数分かかる**ので、エージェントは完了までブロックされることを前提にする。
+
+```bash
+# OpenRouter（既定）
+aitool generate-video \
+  --text "海辺を走る犬" \
+  --output ./dog.mp4 \
+  [--image ./first-frame.png] \   # 指定するとi2v
+  [--duration 5] \
+  [--resolution 720p] \
+  [--aspect-ratio 16:9] \
+  [--audio | --no-audio]
+
+# fal（H3 Max Turbo など OpenRouter に無いモデル）
+aitool generate-video --backend fal \
+  --text "海辺を走る犬" \
+  --output ./dog.mp4 \
+  --resolution 768p
+```
+
+| オプション | 短縮 | 必須 | 説明 |
+|-----------|------|------|------|
+| `--text TEXT` | `-t` | ✅ | プロンプトテキスト |
+| `--output PATH` | `-o` | ✅ | 生成動画の保存先パス（通常 `.mp4`） |
+| `--image PATH` | `-i` | — | 先頭フレームにする画像（指定するとi2v） |
+| `--duration INT` | — | — | 動画の長さ（秒）。省略時はモデル既定 |
+| `--resolution TEXT` | — | — | 解像度（`480p` / `720p` / `768p` / `1080p` など。対応はモデルによる） |
+| `--aspect-ratio TEXT` | — | — | アスペクト比（`16:9` / `9:16` / `1:1` など） |
+| `--audio` / `--no-audio` | — | — | 音声生成の有無。省略時はモデル既定 |
+| `--seed INT` | — | — | 乱数シード |
+| `--param KEY=VALUE` | `-p` | — | バックエンド固有パラメータ。複数回指定可。値はJSONとして解釈（例: `--param duration=8s`） |
+| `--backend TEXT` | `-b` | — | `openrouter`（既定）または `fal` |
+| `--poll-interval FLOAT` | — | — | 状態確認の間隔（秒）。既定 `5` |
+| `--max-wait FLOAT` | — | — | 完了を待つ上限（秒）。既定 `900` |
+| + 共通オプション | | | |
+
+**`--json` の `result` キー:** `output`, `mime`, `backend`, `job_id`, `expanded_prompt`
+
+**バックエンドの選び方:**
+
+| バックエンド | 既定モデル | 必要なキー | 使いどころ |
+|---|---|---|---|
+| `openrouter` | `minimax/hailuo-3-max` | `OPENROUTER_API_KEY` | 基本はこちら。Veo 3.1 / Seedance 2.x / Wan 3.0 / Kling v3 / Sora 2 Pro / H3 Max。`aitool models --feature video-generation` で一覧できる |
+| `fal` | `minimax/h3-max-turbo` | `FAL_KEY` | H3 Max Turbo（H3 Max の半額・同等品質）など、OpenRouter に無いモデルが必要なとき |
+
+- ユーザーが特にモデルを指定しなければ既定（OpenRouter）でよい。「安く・速く」を求められたら `--backend fal`（H3 Max Turbo）を提案する。
+- `--backend fal` で `FAL_KEY` が無いとエラーになる。無ければ OpenRouter の `minimax/hailuo-3-max` で代替できる（Turbo ではないが同系統）。
+- fal のモデル ID は `publisher/name` の2階層で書くと `--image` の有無に応じて `/text-to-video` / `/image-to-video` が自動で補われる。`fal-ai/veo3.1/fast` のような3階層以上はそのまま使われる。
+- fal はモデルごとに入力スキーマが異なる。共通オプションは MiniMax H3 系に合わせてあり（`--resolution 768p` は自動で `768P` になる）、Veo（`duration: "8s"`）や Seedance（`duration: "auto"`）のような形式は `--param duration=8s` で渡す。400/422 エラーの本文に有効な値が書かれているので、それを見て `--param` で渡し直す。
+- `--timeout` は HTTP 1往復のタイムアウトで、生成待ちの上限ではない。長い動画で待ちきれない場合は `--max-wait` を延ばす。
+- コスト: OpenRouter は `usage.cost_usd` にコストが入る（トークン数は無い）。fal はコストを返さないので `cost_usd` は `null`。`--stats` は不要（効かない）。
 
 ### `recognize-image` — 画像認識
 
@@ -196,6 +250,7 @@ aitool models --feature stt --json
 
 | 値 | 対象 | 対応コマンド |
 |---|---|---|
+| `video-generation` | 動画生成モデル（OpenRouter バックエンドのみ） | `generate-video` |
 | `image-generation` | 画像を出力できるモデル | `generate-image` |
 | `image-recognition` | 画像を入力できるモデル | `recognize-image` |
 | `stt` | 文字起こし専用モデル | `transcribe --mode dedicated` |
@@ -207,6 +262,8 @@ aitool models --feature stt --json
 **価格の注意:** STT・TTSのモデルはトークン単位で課金されない（音声の秒数・分数、文字数など）。OpenRouter APIは単位を返さないため、表の `$IN/1M` 列をテキストモデルと比較してはいけない。正確な単価が必要なら `--json` の `pricing`（APIの生の値）を見る。
 
 **`--json` の `result` キー:** `feature`, `count`, `models`（各要素は `id`, `name`, `context_length`, `prompt_price_per_1m`, `completion_price_per_1m`, `input_modalities`, `output_modalities`, `supported_voices`）
+
+`--feature video-generation` だけは別エンドポイント（`/videos/models`）から取るので要素が異なる: `id`, `supported_resolutions`, `supported_durations`, `supported_aspect_ratios`, `pricing_skus`（キー名に単位が入る。例: `duration_seconds_720p=0.10` は 720p で 1 秒あたり $0.10）。fal 限定モデルは出ない。
 
 ---
 
@@ -241,7 +298,7 @@ aitool config --json
 
 モデル指定まわりで想定と違う挙動をしたときは、まずこれを見る。
 
-**`--json` の `result` キー:** `api_keys`（`env_var`, `is_set`, `source`）, `models`（`feature`, `env_var`, `model`, `source`）
+**`--json` の `result` キー:** `api_keys`（`env_var`, `is_set`, `source`）, `models`（`feature`, `env_var`, `model`, `source`）, `video_backend`（`env_var`, `backend`, `source`）
 
 ---
 
@@ -284,6 +341,8 @@ aitool config --json
 | コマンド | `--json` だけ | `--stats` を足すと |
 |---|---|---|
 | `generate-image` | コストが入る | + provider / サーバー側の所要時間 |
+| `generate-video`（openrouter） | コストが入る（トークン数は `null`） | `--stats` 非対応 |
+| `generate-video`（fal） | コストなし（fal直叩き）。`timing.generation_time_ms` に推論時間 | `--stats` 非対応 |
 | `recognize-image` | コストが入る | + provider / サーバー側の所要時間 |
 | `transcribe --mode llm` | コストが入る | + provider / サーバー側の所要時間 |
 | `transcribe --mode dedicated` | コストが入る（トークン数は `null`） | 変化なし（生成IDが返らないため） |
@@ -358,6 +417,26 @@ aitool transcribe-timestamp --api-key sk-xxx --audio ./voice.mp3
 
 APIキーは https://platform.openai.com/api-keys で取得できる。
 
+### `Error: fal API key was not found` — fal APIキー未設定の場合
+
+`generate-video --backend fal` を使う場合は `FAL_KEY` を設定する:
+
+```dotenv
+FAL_KEY=xxxxxxxx-...:...
+```
+
+またはCLI引数で直接渡す:
+
+```bash
+aitool generate-video --backend fal --api-key xxx --text "..." --output ./out.mp4
+```
+
+APIキーは https://fal.ai/dashboard/keys で取得できる。キーが用意できない場合は `--backend` を省略して OpenRouter の `minimax/hailuo-3-max` を使う。
+
+### `Video generation did not finish within ...` — 生成待ちのタイムアウト
+
+`--max-wait` を延ばして再実行する（既定は 900 秒）。`--verbose` を付けると進捗が stderr に出る。
+
 ---
 
 ## 参考: API キー・モデルの設定
@@ -376,6 +455,7 @@ APIキーとモデルは以下の優先順で解決される（上ほど優先�
 ```dotenv
 OPENROUTER_API_KEY=sk-or-...
 OPENAI_API_KEY=sk-...
+FAL_KEY=...
 
 # モデルを変えたい場合（省略時はプログラム内定数が使われる）
 AITOOL_IMAGE_GENERATION_MODEL=google/gemini-3.1-flash-image-preview
@@ -383,4 +463,9 @@ AITOOL_IMAGE_RECOGNITION_MODEL=google/gemini-3-flash-preview
 AITOOL_STT_MODEL=openai/whisper-large-v3-turbo
 AITOOL_STT_TIMESTAMP_MODEL=whisper-1
 AITOOL_TTS_MODEL=google/gemini-3.1-flash-tts-preview
+AITOOL_VIDEO_GENERATION_MODEL=minimax/hailuo-3-max
+AITOOL_VIDEO_GENERATION_FAL_MODEL=minimax/h3-max-turbo
+
+# 動画生成の既定バックエンド（openrouter / fal）
+AITOOL_VIDEO_GENERATION_BACKEND=openrouter
 ```

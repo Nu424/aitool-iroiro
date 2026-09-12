@@ -177,4 +177,6 @@ def extension_for_mime(mime: str) -> str:
     return {
         "image/png": ".png",
         "image/webp": ".webp",
+        "video/mp4": ".mp4",
+        "video/webm": ".webm",
     }.get(mime, ".bin")
