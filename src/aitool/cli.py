@@ -66,6 +66,7 @@ from aitool.tools.image_generation import ImageGenerationTool, save_generated_im
 from aitool.tools.image_recognition import ImageRecognitionTool
 from aitool.tools.stt import SpeechToTextTool, TimestampTranscriptionTool
 from aitool.tools.tts import TextToSpeechTool
+from aitool.updater import installed_commit, run_upgrade
 from aitool.tools.video_generation import (
     FalVideoTool,
     OpenRouterVideoTool,
@@ -909,6 +910,27 @@ def config(
 
     typer.echo("\nVideo backend:")
     typer.echo(f"  {video_backend['backend']}  ({video_backend['source']})")
+
+
+# --- サブコマンド: 自己更新 ---
+
+
+@app.command("update")
+def update() -> None:
+    """``uv tool upgrade`` を実行して aitool を最新コミットへ更新する。
+
+    ``uv tool install git+...`` で導入した環境のみ対応する。更新の要否は
+    判定せず、常に uv に再解決させる。
+    """
+    commit = installed_commit()
+    if commit is not None:
+        typer.echo(f"Installed commit: {commit[:12]}", err=True)
+    try:
+        code = run_upgrade()
+    except AitoolError as error:
+        _fail("update", error, json_output=False)
+    if code != 0:
+        raise typer.Exit(code=code)
 
 
 if __name__ == "__main__":

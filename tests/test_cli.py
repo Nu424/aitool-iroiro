@@ -461,3 +461,44 @@ def test_complete_stats_skips_lookup_unless_enabled() -> None:
     filled = tool.complete_stats(client, CallStats(generation_id="gen-x"), enabled=True)
     assert client.calls == 1
     assert filled.cost_usd == 0.5
+
+
+def test_update_runs_uv_tool_upgrade(monkeypatch) -> None:
+    calls: list[list[str]] = []
+
+    class Completed:
+        returncode = 0
+
+    monkeypatch.setattr("aitool.updater.installed_commit", lambda: "abcdef1234567890")
+    monkeypatch.setattr("aitool.cli.installed_commit", lambda: "abcdef1234567890")
+    monkeypatch.setattr("aitool.updater.shutil.which", lambda name: "C:/fake/uv.exe")
+    monkeypatch.setattr(
+        "aitool.updater.subprocess.run",
+        lambda args, check=False: calls.append(args) or Completed(),
+    )
+
+    result = runner.invoke(app, ["update"])
+
+    assert result.exit_code == 0
+    assert calls == [["C:/fake/uv.exe", "tool", "upgrade", "aitool-iroiro"]]
+
+
+def test_update_fails_outside_uv_tool_install(monkeypatch) -> None:
+    monkeypatch.setattr("aitool.updater.installed_commit", lambda: None)
+    monkeypatch.setattr("aitool.cli.installed_commit", lambda: None)
+
+    result = runner.invoke(app, ["update"])
+
+    assert result.exit_code == 1
+    assert "cannot update itself" in result.output
+
+
+def test_update_fails_when_uv_is_missing(monkeypatch) -> None:
+    monkeypatch.setattr("aitool.updater.installed_commit", lambda: "abcdef1234567890")
+    monkeypatch.setattr("aitool.cli.installed_commit", lambda: "abcdef1234567890")
+    monkeypatch.setattr("aitool.updater.shutil.which", lambda name: None)
+
+    result = runner.invoke(app, ["update"])
+
+    assert result.exit_code == 1
+    assert "'uv' was not found" in result.output

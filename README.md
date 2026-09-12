@@ -10,10 +10,12 @@ OpenRouterの各モデルをCLIから呼び出すためのPythonツールです�
 uv tool install git+https://github.com/Nu424/aitool-iroiro.git
 ```
 
-アップデードする場合:
+アップデートする場合（どちらでも同じ）:
 
 ```bash
-uv tool install --force git+https://github.com/Nu424/aitool-iroiro.git
+aitool update
+# または
+uv tool upgrade aitool-iroiro
 ```
 
 一時実行する場合:
@@ -251,6 +253,16 @@ Default models:
 Video backend:
   openrouter  (built-in default)
 ```
+
+### Update
+
+`uv tool install git+...` で導入した aitool を、リポジトリの最新コミットへ更新します。内部では `uv tool upgrade aitool-iroiro` を実行しているだけで、uv がインストール時に記録した取得元（git URL）を読み直して再インストールします。
+
+```bash
+aitool update
+```
+
+`uv run` での開発環境など、`uv tool install git+...` 以外で導入した環境では実行できません。`--json` には対応していません。
 
 ## JSON Output
 
